@@ -84,13 +84,6 @@ with c2:
     
     df = pd.read_csv(db_file)
     
-    # 2. ONLY SHOW GRAPH TOOLS IF DATA EXISTS
+    # 2. BULLETPROOF GRAPHING LOGIC
     if not df.empty:
-        climate_vars = [col for col in df.columns if col.startswith('Y_') or col.startswith('N_')]
-        
-        if climate_vars:
-            g1, g2 = st.columns(2)
-            with g1: x_var = st.selectbox("Select Climate Variable:", climate_vars)
-            with g2: 
-                species_list = df["Species"].dropna().unique()
-                selected_spp
+        climate_vars = [col for col in df.columns if col.startswith('Y_')
