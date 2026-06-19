@@ -73,4 +73,253 @@ with st.sidebar:
                 new_rows = []
                 progress_bar = st.progress(0)
                 
-                for idx, obs in enumerate
+                # FIXED LINE 76: Rewritten into a split configuration to avoid line end truncation cuts
+                total_items = len(obs_list)
+                for idx in range(total_items):
+                    obs = obs_list[idx]
+                    
+                    obs_date_str = obs.get("observed_on")
+                    if not obs_date_str: continue
+                    
+                    obs_date = datetime.strptime(obs_date_str, "%Y-%m-%d")
+                    year = obs_date.year
+                    doy = int(obs_date.strftime("%j"))
+                    
+                    if year < 1901 or year > 2026: continue
+                    
+                    location = obs.get("location")
+                    if not location: continue
+                    lat, lon = map(float, location.split(","))
+                    
+                    el = obs.get("elevation", None)
+                    el = int(float(el)) if (el is not None and float(el) > 0) else 1200
+                    
+                    stages = []
+                    annotations = obs.get("annotations", [])
+                    for ann in annotations:
+                        if ann.get("controlled_term_id") == 1:
+                            val = ann.get("controlled_value_id")
+                            if val == 2: stages.append("Flowering")
+                            if val == 3: stages.append("Fruiting")
+                    
+                    phenology_stage = ", ".join(stages) if stages else "None"
+                    
+                    mat_val = "Data Unavailable"
+                    t_spring_val = "Data Unavailable"
+                    t_summer_val = "Data Unavailable"
+                    t_may_val = "Data Unavailable"
+                    
+                    api_url = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1={idx}&ID2=test1&lat={lat}&lon={lon}&el={el}&prd=%20{year}&varYSM=YSM"
+                    
+                    cl_res = None
+                    try:
+                        cl_res = requests.get(api_url, timeout=7).json()
+                        st.session_state.last_raw_response = cl_res
+                    except Exception:
+                        pass
+                    
+                    data_dict = {}
+                    res_type = type(cl_res).__name__
+                    
+                    if res_type == "list" and cl_res:
+                        data_dict = cl_res[0]
+                    elif res_type == "dict":
+                        data_dict = cl_res
+                    
+                    v_mat = extract_climate_var(data_dict, ["MAT"])
+                    v_sp = extract_climate_var(data_dict, ["Tave_sp"])
+                    v_sm = extract_climate_var(data_dict, ["Tave_sm"])
+                    v_m5 = extract_climate_var(data_dict, ["Tave05"])
+                    
+                    if v_mat is not None:
+                        mat_val = v_mat
+                    if v_sp is not None:
+                        t_spring_val = v_sp
+                    if v_sm is not None:
+                        t_summer_val = v_sm
+                    if v_m5 is not None:
+                        t_may_val = v_m5
+                    
+                    new_rows.append([inat_species, doy, year, phenology_stage, lat, lon, el, mat_val, t_spring_val, t_summer_val, t_may_val, "iNaturalist"])
+                    time.sleep(0.1)
+                    progress_bar.progress((idx + 1) / total_items)
+                
+                if new_rows:
+                    inat_df = pd.DataFrame(new_rows, columns=[
+                        "Species", "DOY", "Year", "Phenology_Stage", "Latitude", "Longitude", "Elevation", 
+                        "MAT", "Tave_Spring", "Tave_Summer", "Tave_May", "Data_Source"
+                    ])
+                    inat_df.to_csv(DB_FILE, mode='a', header=False, index=False)
+                    st.success(f"Processed and merged {len(new_rows)} rows from ClimateNA!")
+                    st.rerun()
+        except Exception as e:
+            st.error(f"iNaturalist tracking failure: {str(e)}")
+
+# ----------------- LEFT COLUMN: HERBARIUM MANUAL INPUT -----------------
+with col1:
+    st.header("Enter Herbarium Label Data")
+    
+    with st.form("herbarium_form"):
+        species = st.text_input("Plant Species", placeholder="e.g., Anemone patens")
+        collection_date = st.date_input("Collection Date", value=date(2000, 5, 1), min_value=date(1850, 1, 1), max_value=date(2050, 12, 31))
+        
+        st.write("Phenology Stage (Select all that apply):")
+        c_flowering = st.checkbox("Flowering")
+        c_fruiting = st.checkbox("Fruiting")
+        c_none = st.checkbox("None / Vegetative Only")
+        
+        lat = st.number_input("Latitude", format="%.5f", value=51.17641)
+        lon = st.number_input("Longitude", format="%.5f", value=-115.56820)
+        el = st.number_input("Elevation (meters)", min_value=0, value=1420)
+        
+        submitted = st.form_submit_button("Grab ClimateNA Data & Plot")
+
+        if submitted:
+            stages = []
+            if c_flowering: stages.append("Flowering")
+            if c_fruiting: stages.append("Fruiting")
+            if c_none: stages.append("None")
+            phenology_stage = ", ".join(stages) if stages else "Unspecified"
+
+            if not species.strip():
+                st.error("Please enter a plant species name.")
+            else:
+                st.session_state.form_data = {
+                    "species": species, "date": collection_date, "stage": phenology_stage,
+                    "lat": lat, "lon": lon, "el": el
+                }
+
+if st.session_state.form_data is not None:
+    data = st.session_state.form_data
+    st.session_state.form_data = None 
+    year = data["date"].year
+    doy = int(data["date"].strftime("%j"))
+    
+    mat_val = "Data Unavailable"
+    t_spring_val = "Data Unavailable"
+    t_summer_val = "Data Unavailable"
+    t_may_val = "Data Unavailable"
+    
+    if year >= 1901:
+        api_url = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=test1&lat={data['lat']}&lon={data['lon']}&el={data['el']}&prd=%20{year}&varYSM=YSM"
+        
+        response = None
+        try:
+            response = requests.get(api_url, timeout=10)
+        except Exception:
+            pass
+        
+        if response is not None and response.status_code == 200:
+            data_json = response.json()
+            st.session_state.last_raw_response = data_json
+            
+            data_dict = {}
+            json_type = type(data_json).__name__
+            if json_type == "list" and data_json:
+                data_dict = data_json[0]
+            elif json_type == "dict":
+                data_dict = data_json
+            
+            if isinstance(data_dict, dict):
+                v_mat = extract_climate_var(data_dict, ["MAT"])
+                v_sp = extract_climate_var(data_dict, ["Tave_sp"])
+                v_sm = extract_climate_var(data_dict, ["Tave_sm"])
+                v_m5 = extract_climate_var(data_dict, ["Tave05"])
+                
+                if v_mat is not None:
+                    mat_val = v_mat
+                if v_sp is not None:
+                    t_spring_val = v_sp
+                if v_sm is not None:
+                    t_summer_val = v_sm
+                if v_m5 is not None:
+                    t_may_val = v_m5
+
+    new_row = pd.DataFrame([[data["species"], doy, year, data["stage"], data["lat"], data["lon"], data["el"], mat_val, t_spring_val, t_summer_val, t_may_val, "Herbarium"]], 
+                            columns=["Species", "DOY", "Year", "Phenology_Stage", "Latitude", "Longitude", "Elevation", "MAT", "Tave_Spring", "Tave_Summer", "Tave_May", "Data_Source"])
+    new_row.to_csv(DB_FILE, mode='a', header=False, index=False)
+    st.rerun()
+
+# ----------------- RIGHT COLUMN: VISUALIZATIONS & FILTERS -----------------
+with col2:
+    st.header("Analysis Dashboard")
+    
+    if st.session_state.last_raw_response is not None:
+        with st.expander("🔍 Diagnostic Console (Click to inspect last ClimateNA connection)"):
+            st.write("Below is the exact data map returned by ClimateNA:")
+            st.json(st.session_state.last_raw_response)
+            
+    df = pd.read_csv(DB_FILE)
+    
+    df_plot_clean = df.copy()
+    for col in ["MAT", "Tave_Spring", "Tave_Summer", "Tave_May", "DOY", "Year"]:
+        df_plot_clean[col] = pd.to_numeric(df_plot_clean[col], errors='coerce')
+        
+    graph_df = df_plot_clean.dropna(subset=["DOY", "Year"])
+    
+    if st.sidebar.button("⚠️ Reset Database (Clear Rows)"):
+        if os.path.exists(DB_FILE): os.remove(DB_FILE)
+        init_db()
+        st.rerun()
+
+    if df.empty:
+        st.info("The database is currently empty. Submit herbarium data or use the iNaturalist importer!")
+    else:
+        st.subheader("Graph Configurations")
+        f_col1, f_col2, f_col3 = st.columns(3)
+        
+        with f_col1:
+            x_axis_var = st.selectbox("Select Climate Variable:", ["MAT", "Tave_Spring", "Tave_Summer", "Tave_May"], index=1)
+        with f_col2:
+            all_species = ["All Species"] + list(graph_df["Species"].unique())
+            selected_species = st.selectbox("Filter by Species:", all_species)
+        with f_col3:
+            source_options = ["All Sources", "Herbarium Only", "iNaturalist Only"]
+            selected_source = st.selectbox("Filter by Data Source:", source_options)
+
+        st.write("Filter Graph by Phenology Stage:")
+        p_cols = st.columns(3)
+        with p_cols[0]: f_flowering = st.checkbox("Show Flowering Data", value=True)
+        with p_cols[1]: f_fruiting = st.checkbox("Show Fruiting Data", value=True)
+        with p_cols[2]: f_none = st.checkbox("Show None / Vegetative Data", value=True)
+        
+        plot_df = graph_df if selected_species == "All Species" else graph_df[graph_df["Species"] == selected_species]
+        
+        if selected_source == "Herbarium Only":
+            plot_df = plot_df[plot_df["Data_Source"] == "Herbarium"]
+        elif selected_source == "iNaturalist Only":
+            plot_df = plot_df[plot_df["Data_Source"] == "iNaturalist"]
+
+        allowed_stages = []
+        if f_flowering: allowed_stages.append("Flowering")
+        if f_fruiting: allowed_stages.append("Fruiting")
+        if f_none: allowed_stages.append("None")
+        
+        if not allowed_stages:
+            st.warning("All phenology stages unchecked.")
+            plot_df = pd.DataFrame(columns=plot_df.columns)
+        else:
+            plot_df = plot_df[plot_df["Phenology_Stage"].apply(lambda x: any(stage in str(x) for stage in allowed_stages))]
+        
+        valid_graph_df = plot_df.dropna(subset=[x_axis_var])
+        
+        if valid_graph_df.empty:
+            st.info("No matching records found with valid climate data.")
+        else:
+            labels_map = {"MAT": "Mean Annual Temp", "Tave_Spring": "Mean Spring Temp", "Tave_Summer": "Mean Summer Temp", "Tave_May": "Mean May Temp"}
+            
+            fig = px.scatter(
+                valid_graph_df, x=x_axis_var, y="DOY", color="Year",
+                symbol="Data_Source",
+                hover_data=["Phenology_Stage", "Data_Source", "Elevation"],
+                size_max=12,
+                title=f"Phenology Shift vs {labels_map[x_axis_var]}",
+                labels={x_axis_var: f"{labels_map[x_axis_var]} (°C)", "DOY": "Day of Year Collected", "Year": "Year"},
+                color_continuous_scale=px.colors.sequential.Plasma
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        
+        st.subheader("Live Enriched Database")
+        with open(DB_FILE, "rb") as file:
+            st.download_button(label="📥 Download Full Database (CSV)", data=file, file_name="phenology_combined_data.csv", mime="text/csv")
+        st.dataframe(df, use_container_width=True)
