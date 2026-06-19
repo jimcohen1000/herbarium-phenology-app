@@ -11,7 +11,6 @@ st.title("Herbarium & iNaturalist Phenology Tracker")
 
 DB_FILE = "herbarium_database_multi_source.csv"
 
-# FIXED CORRUPTION BYPASS: Rebuilds structural ledger if the CSV is unparseable
 def init_db():
     headers = [
         "Species", "DOY", "Year", "Phenology_Stage", "Latitude", "Longitude", "Elevation", 
@@ -23,7 +22,6 @@ def init_db():
         try:
             pd.read_csv(DB_FILE)
         except Exception:
-            # File is corrupted, wipe and rebuild instantly to restore dashboard view
             pd.DataFrame(columns=headers).to_csv(DB_FILE, index=False)
 
 init_db()
@@ -78,42 +76,4 @@ with st.sidebar:
                 
                 for idx in range(total_items):
                     obs = obs_list[idx]
-                    obs_date_str = obs.get("observed_on")
-                    if not obs_date_str: continue
-                    
-                    obs_date = datetime.strptime(obs_date_str, "%Y-%m-%d")
-                    year = obs_date.year
-                    doy = int(obs_date.strftime("%j"))
-                    
-                    if year < 1901: continue
-                    
-                    query_year = year
-                    if query_year > 2024:
-                        query_year = 2024
-                    
-                    location = obs.get("location")
-                    if not location: continue
-                    lat, lon = map(float, location.split(","))
-                    
-                    el = obs.get("elevation", None)
-                    el = int(float(el)) if (el is not None and float(el) > 0) else 1200
-                    
-                    stages = []
-                    annotations = obs.get("annotations", [])
-                    for ann in annotations:
-                        if ann.get("controlled_term_id") == 1:
-                            val = ann.get("controlled_value_id")
-                            if val == 2:
-                                stages.append("Flowering")
-                            if val == 3:
-                                stages.append("Fruiting")
-                    
-                    phenology_stage = ", ".join(stages) if stages else "None"
-                    
-                    mat_val = "Data Unavailable"
-                    t_spring_val = "Data Unavailable"
-                    t_summer_val = "Data Unavailable"
-                    t_may_val = "Data Unavailable"
-                    
-                    cna_host = "https://api.climatena.ca/api/cnaApi6/LatLonEl"
-                    cna_args = {"ID1": idx, "ID2":
+                    obs_
