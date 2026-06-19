@@ -87,7 +87,7 @@ with c1:
         q_yr = 2024 if yr > 2024 else (1901 if yr < 1901 else yr)
         
         # FIXED: Removed trailing extensions to map directly to server expectations
-        url_year = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=t1&lat={lat}&lon={lon}&el={el}&prd=Year_{q_yr}&varYSM=YSM"
+        url_year = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=t1&lat={lat}&lon={lon}&el={el}&prd=Year_{q_yr}.ann&varYSM=YSM"
         url_norm = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=t2&lat={lat}&lon={lon}&el={el}&prd=Normal_1961_1990&varYSM=YSM"
         
         mat_year = "Data Unavailable"
