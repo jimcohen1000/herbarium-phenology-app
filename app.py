@@ -75,20 +75,24 @@ with st.sidebar:
                 progress_bar = st.progress(0)
                 total_items = len(obs_list)
                 
+                # FIXED BLOCK: Explicit layout alignment for processing tracking parameters
                 for idx in range(total_items):
                     obs = obs_list[idx]
                     obs_date_str = obs.get("observed_on")
-                    if not obs_date_str: continue
+                    if not obs_date_str:
+                        continue
                     
                     obs_date = datetime.strptime(obs_date_str, "%Y-%m-%d")
                     year = obs_date.year
                     doy = int(obs_date.strftime("%j"))
                     
-                    if year < 1901: continue
+                    if year < 1901:
+                        continue
                     query_year = 2024 if year > 2024 else year
                     
                     location = obs.get("location")
-                    if not location: continue
+                    if not location:
+                        continue
                     lat, lon = map(float, location.split(","))
                     
                     el = obs.get("elevation", None)
@@ -99,8 +103,10 @@ with st.sidebar:
                     for ann in annotations:
                         if ann.get("controlled_term_id") == 1:
                             val = ann.get("controlled_value_id")
-                            if val == 2: stages.append("Flowering")
-                            if val == 3: stages.append("Fruiting")
+                            if val == 2:
+                                stages.append("Flowering")
+                            if val == 3:
+                                stages.append("Fruiting")
                     
                     phenology_stage = ", ".join(stages) if stages else "None"
                     
@@ -122,18 +128,4 @@ with st.sidebar:
                     
                     v_mat = extract_climate_var(data_dict, "MAT")
                     v_sp = extract_climate_var(data_dict, "Tave_sp")
-                    v_sm = extract_climate_var(data_dict, "Tave_sm")
-                    v_m5 = extract_climate_var(data_dict, "Tave_05")
-                    
-                    if v_mat is not None: mat_val = v_mat
-                    if v_sp is not None: t_spring_val = v_sp
-                    if v_sm is not None: t_summer_val = v_sm
-                    if v_m5 is not None: t_may_val = v_m5
-                    
-                    row_entry = [inat_species, doy, year, phenology_stage, lat, lon, el, mat_val, t_spring_val, t_summer_val, t_may_val, "iNaturalist"]
-                    new_rows.append(row_entry)
-                    
-                    time.sleep(0.05)
-                    progress_bar.progress((idx + 1) / total_items)
-                
-                if new_rows:
+                    v_sm = extract_climate_var(data_dict, "Tave
