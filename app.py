@@ -130,7 +130,6 @@ with st.sidebar:
                     if v_sm is not None: t_summer_val = v_sm
                     if v_m5 is not None: t_may_val = v_m5
                     
-                    # FIXED LAYOUT BLOCK: Straight lines, zero nested brackets or complex parameters
                     row_entry = [inat_species, doy, year, phenology_stage, lat, lon, el, mat_val, t_spring_val, t_summer_val, t_may_val, "iNaturalist"]
                     new_rows.append(row_entry)
                     
@@ -138,33 +137,3 @@ with st.sidebar:
                     progress_bar.progress((idx + 1) / total_items)
                 
                 if new_rows:
-                    inat_df = pd.DataFrame(new_rows, columns=headers)
-                    inat_df.to_csv(DB_FILE, mode='a', header=False, index=False)
-                    st.success(f"Successfully added {len(new_rows)} records!")
-                    st.rerun()
-
-# ----------------- LEFT COLUMN: HERBARIUM MANUAL INPUT -----------------
-with col1:
-    st.header("Enter Herbarium Data")
-    
-    with st.form("herbarium_form", clear_on_submit=False):
-        species = st.text_input("Plant Species", value="Anemone patens", key="manual_spp")
-        collection_date = st.date_input("Collection Date", value=date(2020, 5, 1), key="manual_date")
-        
-        st.write("Phenology Stage:")
-        c_flowering = st.checkbox("Flowering", value=True, key="chk_flow")
-        c_fruiting = st.checkbox("Fruiting", key="chk_fruit")
-        c_none = st.checkbox("None / Vegetative Only", key="chk_none")
-        
-        lat = st.number_input("Latitude", format="%.5f", value=51.17641, key="num_lat")
-        lon = st.number_input("Longitude", format="%.5f", value=-115.56820, key="num_lon")
-        el = st.number_input("Elevation (meters)", min_value=0, value=1420, key="num_el")
-        
-        submitted = st.form_submit_button("Submit Entry")
-
-    if submitted:
-        if not species.strip():
-            st.error("Please enter a species name.")
-        else:
-            stages = []
-            if c_flowering: stages.append
