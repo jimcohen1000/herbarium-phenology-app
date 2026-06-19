@@ -9,12 +9,15 @@ st.set_page_config(layout="wide")
 st.title("Herbarium Phenology & Climate Change Tracker")
 
 # Define the file name for our local database
-DB_FILE = "herbarium_database.csv"
+DB_FILE = "herbarium_database_enriched.csv"
 
-# Helper function to initialize CSV if it doesn't exist
+# Helper function to initialize CSV if it doesn't exist (Updated with seasonal/monthly headers)
 def init_db():
     if not os.path.exists(DB_FILE):
-        df = pd.DataFrame(columns=["Species", "DOY", "Year", "Phenology_Stage", "Latitude", "Longitude", "Elevation", "MAT"])
+        df = pd.DataFrame(columns=[
+            "Species", "DOY", "Year", "Phenology_Stage", "Latitude", "Longitude", "Elevation", 
+            "MAT", "Tave_Spring", "Tave_Summer", "Tave_May"
+        ])
         df.to_csv(DB_FILE, index=False)
 
 init_db()
@@ -56,44 +59,59 @@ with col1:
 
         if not species.strip():
             st.error("Please enter a plant species name.")
-        elif collection_date.year < 1901:
-            st.error(f"ClimateNA does not contain historical data for the year {collection_date.year}. Please select a date from 1901 onward.")
         else:
             year = collection_date.year
             doy = int(collection_date.strftime("%j")) 
             
-            # Formatted ClimateNA API Endpoint string
-            api_url = f"https://api6.climatebc.ca/api/clmApi6/LatLonEl?ID1=1&ID2=test&lat={lat}&lon={lon}&el={el}&prd={year}&varYSM=Y"
+            # Default fallback values if API fails
+            mat_val = "Data Unavailable"
+            t_spring_val = "Data Unavailable"
+            t_summer_val = "Data Unavailable"
+            t_may_val = "Data Unavailable"
             
-            try:
-                with st.spinner("Fetching climate data from ClimateNA..."):
-                    response = requests.get(api_url, timeout=10).json()
+            if year >= 1901:
+                prd_string = f"Year_{year}"
+                # CHANGED: varYSM=YSM tells the API to return Annual (Y), Seasonal (S), and Monthly (M) variables combined!
+                api_url = f"https://api6.climatebc.ca/api/clmApi6/LatLonEl?ID1=1&ID2=test&lat={lat}&lon={lon}&el={el}&prd={prd_string}&varYSM=YSM"
                 
-                # Extract dictionary payload from API list container safely
-                data_dict = {}
-                if isinstance(response, list) and len(response) > 0:
-                    data_dict = response[0]
-                elif isinstance(response, dict):
-                    data_dict = response
-                
-                # Check for MAT keys from ClimateNA response keys
-                mat = data_dict.get("MAT", data_dict.get("mat", None))
-                
-                if mat is not None:
-                    mat_float = float(mat)
-                    
-                    new_data = pd.DataFrame([[species, doy, year, phenology_stage, lat, lon, el, mat_float]], 
-                                            columns=["Species", "DOY", "Year", "Phenology_Stage", "Latitude", "Longitude", "Elevation", "MAT"])
-                    new_data.to_csv(DB_FILE, mode='a', header=False, index=False)
-                    st.success(f"Added {species} ({phenology_stage})! Calculated DOY: {doy}. MAT: {mat_float}°C.")
-                    st.rerun() # Refresh the page to render the new valid row immediately
-                else:
-                    st.error("ClimateNA connected, but 'MAT' was missing from this region.")
-                    st.warning("Raw Server Return Summary:")
-                    st.write(response)
-                    
-            except Exception as e:
-                st.error(f"Error processing data: {str(e)}.")
+                try:
+                    with st.spinner("Fetching climate data from ClimateNA..."):
+                        response = requests.get(api_url, timeout=10)
+                        
+                        if response.status_code == 200:
+                            data_json = response.json()
+                            
+                            data_dict = {}
+                            if isinstance(data_json, list) and len(data_json) > 0:
+                                data_dict = data_json[0]
+                            elif isinstance(data_json, dict):
+                                data_dict = data_json
+                            
+                            # Parse out Annual, Seasonal, and Monthly Targets
+                            mat = data_dict.get("MAT", data_dict.get("mat", None))
+                            t_spring = data_dict.get("Tave_sp", None) # Mean spring temp
+                            t_summer = data_dict.get("Tave_sm", None) # Mean summer temp
+                            t_may = data_dict.get("Tave05", None)     # Mean May temp (Month 05)
+                            
+                            if mat is not None: mat_val = float(mat)
+                            if t_spring is not None: t_spring_val = float(t_spring)
+                            if t_summer is not None: t_summer_val = float(t_summer)
+                            if t_may is not None: t_may_val = float(t_may)
+                            
+                except Exception as e:
+                    pass 
+            
+            # Write row to CSV
+            new_data = pd.DataFrame([[species, doy, year, phenology_stage, lat, lon, el, mat_val, t_spring_val, t_summer_val, t_may_val]], 
+                                    columns=["Species", "DOY", "Year", "Phenology_Stage", "Latitude", "Longitude", "Elevation", "MAT", "Tave_Spring", "Tave_Summer", "Tave_May"])
+            new_data.to_csv(DB_FILE, mode='a', header=False, index=False)
+            
+            if isinstance(mat_val, float):
+                st.success(f"Added {species}! Successfully captured Annual, Seasonal, and Monthly parameters.")
+            else:
+                st.warning(f"Added {species}, but ClimateNA variables were unavailable.")
+            
+            st.rerun()
 
 # 3. Interactive Graphing & Data Viewer (Right Column)
 with col2:
@@ -101,51 +119,6 @@ with col2:
     
     df = pd.read_csv(DB_FILE)
     
-    # SAFETY CLEAN: Clear out rows containing bad, empty data types that break Plotly
-    df["MAT"] = pd.to_numeric(df["MAT"], errors='coerce')
-    df["DOY"] = pd.to_numeric(df["DOY"], errors='coerce')
-    df["Year"] = pd.to_numeric(df["Year"], errors='coerce')
-    clean_df = df.dropna(subset=["MAT", "DOY", "Year"])
-    
-    # Also provide an option to reset/wipe the local test database clean
-    if not clean_df.empty:
-        if st.sidebar.button("⚠️ Reset Database (Clear Rows)"):
-            if os.path.exists(DB_FILE):
-                os.remove(DB_FILE)
-            init_db()
-            st.rerun()
-
-    if clean_df.empty:
-        st.info("The database is currently empty. Submit your first valid herbarium entry on the left to generate graphs!")
-    else:
-        all_species = ["All Species"] + list(clean_df["Species"].unique())
-        selected_species = st.selectbox("Filter Graph by Species:", all_species)
-        
-        plot_df = clean_df if selected_species == "All Species" else clean_df[clean_df["Species"] == selected_species]
-        
-        # Plotly Scatter Plot
-        fig = px.scatter(
-            plot_df, 
-            x="MAT", 
-            y="DOY", 
-            color="Year",
-            hover_data=["Phenology_Stage"],
-            size_max=12,
-            title=f"Phenology Shift: Day of Year vs. Mean Annual Temperature ({selected_species})",
-            labels={"MAT": "Mean Annual Temp (°C)", "DOY": "Day of Year Collected", "Year": "Collection Year"},
-            color_continuous_scale=px.colors.sequential.Plasma
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        st.subheader("Live Enriched Database")
-        
-        with open(DB_FILE, "rb") as file:
-            st.download_button(
-                label="📥 Download Full Database (CSV)",
-                data=file,
-                file_name="herbarium_phenology_data.csv",
-                mime="text/csv"
-            )
-            
-        st.dataframe(df, use_container_width=True)
+    # Coerce columns to numbers for graphing safety
+    df_plot_clean = df.copy()
+    for col in
