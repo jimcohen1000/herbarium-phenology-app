@@ -6,7 +6,7 @@ import os
 from datetime import datetime, date
 
 st.set_page_config(layout="wide")
-st.title("Herbarium Tracker - Stable Ledger")
+st.title("Herbarium Tracker - Research Ledger")
 
 headers = [
     "Species", "DOY", "Year", "Latitude", "Longitude", "Elevation",
@@ -20,7 +20,7 @@ db_file = "herbarium_database_multi_source.csv"
 if not os.path.exists(db_file):
     pd.DataFrame(columns=headers).to_csv(db_file, index=False)
 
-# Sidebar: Controls
+# --- Sidebar ---
 with st.sidebar:
     st.header("⚙️ Controls")
     if os.path.exists(db_file):
@@ -28,19 +28,19 @@ with st.sidebar:
         st.metric("Records", len(df_view))
         if len(df_view) > 0:
             st.download_button("📥 Download CSV", data=df_view.to_csv(index=False), file_name="data.csv")
-    
     if st.button("⚠️ Wipe Database"):
         pd.DataFrame(columns=headers).to_csv(db_file, index=False)
         st.rerun()
 
-# Entry Form
+# --- Entry Form ---
 c1, c2 = st.columns([1, 1.4])
 with c1:
     spp = st.text_input("Species", "Anemone patens")
-    date_val = st.date_input("Date", value=date(2020, 5, 1))
+    # Year range set to 1901-2026
+    date_val = st.date_input("Date", min_value=date(1901, 1, 1), value=date(2020, 5, 1))
     yr, doy = date_val.year, int(date_val.strftime("%j"))
     
-    flow = st.checkbox("Flowering")
+    flow = st.checkbox("Flowering", value=True)
     fruit = st.checkbox("Fruiting")
     veg = st.checkbox("Vegetative")
     
@@ -49,50 +49,44 @@ with c1:
     el = st.number_input("Elev (m)", value=1420)
     
     if st.button("Save Entry"):
-        q_yr = 2024 if yr > 2024 else (1901 if yr < 1901 else yr)
         base = "https://api.climatena.ca/api/cnaApi6/LatLonEl"
-        u_yr = base + f"?ID1=1&ID2=t1&lat={lat}&lon={lon}&el={el}&prd=Year_{q_yr}.ann&varYSM=YSM"
+        u_yr = base + f"?ID1=1&ID2=t1&lat={lat}&lon={lon}&el={el}&prd=Year_{yr}.ann&varYSM=YSM"
         u_nm = base + f"?ID1=1&ID2=t2&lat={lat}&lon={lon}&el={el}&prd=Normal_1961_1990&varYSM=YSM"
         
         def get_data(u):
             try:
                 res = requests.get(u, timeout=10)
                 if res.status_code == 200:
-                    data = res.json()
-                    d = data[0] if isinstance(data, list) else data
-                    # SAFELY parse numbers, ignoring invalid/non-numeric strings
-                    out = {}
-                    for k, v in d.items():
-                        try:
-                            val = float(v)
-                            out[k.upper()] = val if val != -9999.0 else None
-                        except (ValueError, TypeError):
-                            out[k.upper()] = None
-                    return out
-            except Exception:
-                pass
+                    d = res.json()[0] if isinstance(res.json(), list) else res.json()
+                    return {k.upper(): float(v) if float(v) != -9999.0 else None for k, v in d.items()}
+            except: pass
             return {}
 
-        y_m = get_data(u_yr)
-        n_m = get_data(u_nm)
-        
+        y_m, n_m = get_data(u_yr), get_data(u_nm)
         row = [spp, doy, yr, lat, lon, el, flow, fruit, veg,
                y_m.get("MAT"), y_m.get("TAVE_WT"), y_m.get("TAVE_SP"), y_m.get("TAVE_SM"), y_m.get("TAVE_05"),
-               n_m.get("MAT"), n_m.get("TAVE_WT"), n_m.get("TAVE_SP"), n_m.get("TAVE_SM"), n_m.get("TAVE_05"),
-               "Herbarium"]
-        
+               n_m.get("MAT"), n_m.get("TAVE_WT"), n_m.get("TAVE_SP"), n_m.get("TAVE_SM"), n_m.get("TAVE_05"), "Herbarium"]
         pd.DataFrame([row], columns=headers).to_csv(db_file, mode='a', header=False, index=False)
-        st.success("Entry saved!")
         st.rerun()
 
-# Dashboard
+# --- Dashboard & Filtering ---
 with c2:
-    st.subheader("Data")
+    st.subheader("Data Visualization")
     df = pd.read_csv(db_file)
     if not df.empty:
-        var = st.selectbox("X-Axis", [c for c in headers if "MAT" in c or "Tave" in c])
-        # Force numeric conversion for plotting
-        df[var] = pd.to_numeric(df[var], errors='coerce')
-        fig = px.scatter(df.dropna(subset=[var, "DOY"]), x=var, y="DOY", color="Year", trendline="ols")
+        # Filters
+        f1, f2, f3 = st.columns(3)
+        with f1: species_f = st.multiselect("Species", df["Species"].unique(), default=df["Species"].unique())
+        with f2: pheno_f = st.multiselect("Phenology", ["Flowering", "Fruiting", "Vegetative"], default=["Flowering"])
+        with f3: var = st.selectbox("X-Axis Variable", [c for c in headers if "MAT" in c or "Tave" in c])
+
+        # Filter logic
+        df_f = df[df["Species"].isin(species_f)]
+        # Filter rows where at least one selected phenology is True
+        mask = df_f[[f for f in pheno_f]].any(axis=1)
+        df_f = df_f[mask]
+
+        df_f[var] = pd.to_numeric(df_f[var], errors='coerce')
+        fig = px.scatter(df_f.dropna(subset=[var, "DOY"]), x=var, y="DOY", color="Year", trendline="ols")
         st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(df)
+        st.dataframe(df_f)
