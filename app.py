@@ -2,55 +2,80 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import os
+import requests
+from datetime import date
 
 st.set_page_config(layout="wide")
-st.title("Herbarium Tracker: Climate Analysis Dashboard")
+st.title("Herbarium Tracker: Full Ledger & Analytics")
 
 db_file = "herbarium_database_expanded.csv"
 
-if not os.path.exists(db_file):
-    st.info("Database is empty. Please add some entries from the data entry page first.")
-    st.stop()
+# --- Helper: Climate Data Fetcher ---
+def get_climate_data(lat, lon, el, prd):
+    base = "https://api.climatena.ca/api/cnaApi6/LatLonEl"
+    url = f"{base}?ID1=1&ID2=t1&lat={lat}&lon={lon}&el={el}&prd={prd}&varYSM=YSM"
+    try:
+        res = requests.get(url, timeout=10)
+        if res.status_code == 200:
+            data = res.json()
+            return data[0] if isinstance(data, list) else data
+    except: return {}
+    return {}
 
-df = pd.read_csv(db_file)
+# --- Layout ---
+c1, c2 = st.columns([1, 2])
 
-# --- Analysis Dashboard ---
-st.subheader("Interactive Phenology Plotter")
+# Column 1: Data Collection
+with c1:
+    st.subheader("Data Collection")
+    collector = st.text_input("Collector Name")
+    col_num = st.text_input("Collector Number")
+    barcode = st.text_input("Barcode")
+    spp = st.text_input("Species")
+    date_val = st.date_input("Date", value=date(2020, 5, 1))
+    flow, fruit, veg = st.checkbox("Flowering"), st.checkbox("Fruiting"), st.checkbox("Vegetative")
+    lat = st.number_input("Lat", format="%.5f", value=51.1764)
+    lon = st.number_input("Lon", format="%.5f", value=-115.5682)
+    el = st.number_input("Elev (m)", value=1420)
+    
+    if st.button("Save Entry"):
+        year_data = get_climate_data(lat, lon, el, f"Year_{date_val.year}")
+        norm_data = get_climate_data(lat, lon, el, "Normal_1961_1990")
+        
+        row = {
+            "Collector": collector, "Col_Number": col_num, "Barcode": barcode,
+            "Species": spp, "DOY": int(date_val.strftime("%j")), "Year": date_val.year,
+            "Flowering": flow, "Fruiting": fruit, "Vegetative": veg
+        }
+        for k, v in year_data.items(): row[f"Y_{k}"] = v
+        for k, v in norm_data.items(): row[f"N_{k}"] = v
+        
+        df_new = pd.DataFrame([row])
+        if not os.path.exists(db_file): df_new.to_csv(db_file, index=False)
+        else: df_new.to_csv(db_file, mode='a', header=False, index=False)
+        st.success("Entry saved!")
 
-# 1. Identify climate variables (those starting with Y_ or N_)
-climate_vars = [col for col in df.columns if col.startswith('Y_') or col.startswith('N_')]
-
-col1, col2 = st.columns([1, 3])
-
-with col1:
-    st.write("### Graph Settings")
-    x_var = st.selectbox("Select Climate Variable (X-Axis):", climate_vars)
-    selected_spp = st.multiselect("Filter by Species:", df["Species"].unique(), default=df["Species"].unique())
-    add_trendline = st.checkbox("Show Trendline", value=True)
-
-with col2:
-    # Filter data
-    plot_df = df[df["Species"].isin(selected_spp)].copy()
-    plot_df[x_var] = pd.to_numeric(plot_df[x_var], errors='coerce')
-    plot_df = plot_df.dropna(subset=[x_var, "DOY"])
-
-    if not plot_df.empty:
-        trend = "ols" if add_trendline else None
-        fig = px.scatter(
-            plot_df, 
-            x=x_var, 
-            y="DOY", 
-            color="Year",
-            trendline=trend,
-            hover_data=["Species", "Barcode", "Collector"],
-            title=f"Relationship between {x_var} and Phenology (DOY)",
-            labels={"DOY": "Day of Year", x_var: "Value from ClimateNA"},
-            template="plotly_white"
-        )
-        st.plotly_chart(fig, use_container_width=True)
+# Column 2: Graphing & Database
+with c2:
+    st.subheader("Analysis Dashboard")
+    if os.path.exists(db_file):
+        df = pd.read_csv(db_file)
+        climate_vars = [col for col in df.columns if col.startswith('Y_') or col.startswith('N_')]
+        
+        # Graph Controls
+        g1, g2 = st.columns(2)
+        with g1: x_var = st.selectbox("Select Climate Variable:", climate_vars)
+        with g2: selected_spp = st.multiselect("Filter Species:", df["Species"].unique(), default=df["Species"].unique())
+        
+        plot_df = df[df["Species"].isin(selected_spp)].copy()
+        plot_df[x_var] = pd.to_numeric(plot_df[x_var], errors='coerce')
+        
+        if not plot_df.empty:
+            fig = px.scatter(plot_df.dropna(subset=[x_var, "DOY"]), x=x_var, y="DOY", color="Year", trendline="ols", title=f"DOY vs {x_var}")
+            st.plotly_chart(fig, use_container_width=True)
+            
+        st.write("### Database Table")
+        st.dataframe(df, use_container_width=True)
+        st.download_button("📥 Download Full CSV", data=df.to_csv(index=False), file_name="full_data.csv")
     else:
-        st.warning("No data points available for the selected filters.")
-
-st.write("---")
-st.subheader("Raw Data View")
-st.dataframe(df, use_container_width=True)
+        st.info("No data in database yet.")
