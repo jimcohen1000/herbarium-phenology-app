@@ -28,7 +28,6 @@ with col1:
     with st.form("herbarium_form"):
         species = st.text_input("Plant Species", placeholder="e.g., Anemone patens")
         
-        # CHANGED: Added min_value (1850) and max_value (2050) constraints to the date picker
         collection_date = st.date_input(
             "Collection Date", 
             value=date(2000, 5, 1),
@@ -84,6 +83,20 @@ with col2:
         
         plot_df = df if selected_species == "All Species" else df[df["Species"] == selected_species]
         
+        # Plotly Scatter Plot configuration
         fig = px.scatter(
             plot_df, 
-            x="MAT",
+            x="MAT", 
+            y="DOY", 
+            color="Year",
+            hover_data=["Phenology_Stage"],
+            size_max=12,
+            title=f"Phenology Shift: Day of Year vs. Mean Annual Temperature ({selected_species})",
+            labels={"MAT": "Mean Annual Temp (°C)", "DOY": "Day of Year Collected", "Year": "Collection Year"},
+            color_continuous_scale=px.colors.sequential.Plasma
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        st.subheader("Live Enriched Database")
+        st.dataframe(df, use_container_width=True)
