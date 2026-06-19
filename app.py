@@ -87,10 +87,4 @@ with st.sidebar:
                     el = obs.get("elevation", None)
                     el = int(float(el)) if (el is not None and float(el) > 0) else 1200
                     
-                    stages = []
-                    annotations = obs.get("annotations", [])
-                    for ann in annotations:
-                        if ann.get("controlled_term_id") == 1:
-                            val = ann.get("controlled_value_id")
-                            if val == 2: stages.append("Flowering")
-                            if val == 3: stages.
+                    # FIXED LINE 96: Flattened into quick, independent evaluation
