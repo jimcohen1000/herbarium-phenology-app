@@ -47,7 +47,6 @@ with col1:
         submitted = st.form_submit_button("Grab ClimateNA Data & Plot")
 
     if submitted:
-        # Process the checkboxes into a single clean string
         stages = []
         if c_flowering: stages.append("Flowering")
         if c_fruiting: stages.append("Fruiting")
@@ -69,18 +68,28 @@ with col1:
             try:
                 with st.spinner("Fetching climate data from ClimateNA..."):
                     response = requests.get(api_url, timeout=10).json()
-                    
-                mat = response.get("MAT", None)
+                
+                # FIXED: Unpack the response safely whether it arrives as a list or a direct dictionary
+                data_dict = {}
+                if isinstance(response, list) and len(response) > 0:
+                    data_dict = response[0]
+                elif isinstance(response, dict):
+                    data_dict = response
+                
+                mat = data_dict.get("MAT", None)
                 
                 if mat is not None:
-                    new_data = pd.DataFrame([[species, doy, year, phenology_stage, lat, lon, el, mat]], 
+                    # Convert string temperature to float number for proper graphing
+                    mat_float = float(mat)
+                    
+                    new_data = pd.DataFrame([[species, doy, year, phenology_stage, lat, lon, el, mat_float]], 
                                             columns=["Species", "DOY", "Year", "Phenology_Stage", "Latitude", "Longitude", "Elevation", "MAT"])
                     new_data.to_csv(DB_FILE, mode='a', header=False, index=False)
-                    st.success(f"Added {species} ({phenology_stage})! Calculated DOY: {doy}. MAT: {mat}°C.")
+                    st.success(f"Added {species} ({phenology_stage})! Calculated DOY: {doy}. MAT: {mat_float}°C.")
                 else:
                     st.error("ClimateNA connected, but 'MAT' was missing. Note: ClimateNA only supports locations within North America and years from 1901-present.")
             except Exception as e:
-                st.error("Failed to connect to ClimateNA. Please check your internet connection or coordinates.")
+                st.error(f"Error processing data: {str(e)}. Please check your internet connection or coordinates.")
 
 # 3. Interactive Graphing & Data Viewer (Right Column)
 with col2:
@@ -96,7 +105,10 @@ with col2:
         
         plot_df = df if selected_species == "All Species" else df[df["Species"] == selected_species]
         
-        # Plotly Scatter Plot configuration
+        # Ensure data types are correct before rendering scatter plot
+        plot_df["MAT"] = pd.to_numeric(plot_df["MAT"], errors='coerce')
+        plot_df["DOY"] = pd.to_numeric(plot_df["DOY"], errors='coerce')
+        
         fig = px.scatter(
             plot_df, 
             x="MAT", 
@@ -113,7 +125,6 @@ with col2:
         
         st.subheader("Live Enriched Database")
         
-        # Create a download button that reads the CSV file data
         with open(DB_FILE, "rb") as file:
             st.download_button(
                 label="📥 Download Full Database (CSV)",
