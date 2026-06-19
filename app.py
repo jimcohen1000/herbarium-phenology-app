@@ -5,9 +5,10 @@ import plotly.express as px
 import os
 from datetime import datetime, date
 
-st.title("Herbarium Tracker - Dual Climate Sync")
+st.set_page_config(layout="wide")
+st.title("Herbarium Tracker - Custom Analytics & Filters")
 
-# Expanded headers to hold both specific year and baseline normal metrics
+# Database structural setup
 headers = [
     "Species", "DOY", "Year", "Latitude", "Longitude", "Elevation",
     "Flowering", "Fruiting", "Vegetative", "MAT_Year", "MAT_Normal", "Data_Source"
@@ -17,7 +18,7 @@ db_file = "herbarium_database_multi_source.csv"
 if "last_raw_response" not in st.session_state:
     st.session_state.last_raw_response = None
 
-# Safe database initializer
+# Safe database initialization
 if not os.path.exists(db_file):
     pd.DataFrame(columns=headers).to_csv(db_file, index=False)
 else:
@@ -54,13 +55,15 @@ with st.sidebar:
         
     st.write("---")
     
+    # 1. RESET FILE CONTROLLER: Completely flushes rows and clears cached diagnostics
     if st.button("⚠️ Wipe & Reset Database"):
         pd.DataFrame(columns=headers).to_csv(db_file, index=False)
+        st.session_state.last_raw_response = None
         st.success("Database table completely cleared!")
         st.rerun()
 
 # ----------------- MAIN LAYOUT COLUMNS -----------------
-c1, c2 = st.columns([1, 1.2])
+c1, c2 = st.columns([1, 1.4])
 
 with c1:
     st.subheader("Manual Data Entry")
@@ -86,7 +89,7 @@ with c1:
     if btn:
         q_yr = 2024 if yr > 2024 else (1901 if yr < 1901 else yr)
         
-        # FIXED: Removed trailing extensions to map directly to server expectations
+        # FIXED: Added .ann back specifically to the target year URL query structure
         url_year = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=t1&lat={lat}&lon={lon}&el={el}&prd=Year_{q_yr}.ann&varYSM=YSM"
         url_norm = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=t2&lat={lat}&lon={lon}&el={el}&prd=Normal_1961_1990&varYSM=YSM"
         
@@ -94,7 +97,6 @@ with c1:
         mat_norm = "Data Unavailable"
         diagnostic_log = {}
 
-        # CALL 1 SATELLITE: Completely isolated historical target loop
         try:
             res_yr = requests.get(url_year, timeout=10)
             if res_yr.status_code == 200:
@@ -103,12 +105,9 @@ with c1:
                 dict_yr = data_yr[0] if isinstance(data_yr, list) else data_yr
                 if "MAT" in dict_yr and float(dict_yr["MAT"]) != -9999.0:
                     mat_year = float(dict_yr["MAT"])
-            else:
-                diagnostic_log["Year_API_Error"] = f"HTTP {res_yr.status_code}"
         except Exception as e:
             diagnostic_log["Year_API_Exception"] = str(e)
 
-        # CALL 2 SATELLITE: Completely isolated reference normal baseline loop
         try:
             res_nm = requests.get(url_norm, timeout=10)
             if res_nm.status_code == 200:
@@ -117,14 +116,11 @@ with c1:
                 dict_nm = data_nm[0] if isinstance(data_nm, list) else data_nm
                 if "MAT" in dict_nm and float(dict_nm["MAT"]) != -9999.0:
                     mat_norm = float(dict_nm["MAT"])
-            else:
-                diagnostic_log["Normal_API_Error"] = f"HTTP {res_nm.status_code}"
         except Exception as e:
             diagnostic_log["Normal_API_Exception"] = str(e)
             
         st.session_state.last_raw_response = diagnostic_log
             
-        # Compile row with dual temperature indicators
         row = pd.DataFrame([[
             spp, doy, yr, lat, lon, el,
             is_flowering, is_fruiting, is_vegetative,
@@ -132,14 +128,14 @@ with c1:
         ]], columns=headers)
         
         row.to_csv(db_file, mode='a', header=False, index=False)
-        st.success("Retrieval processing complete!")
+        st.success("Data points successfully generated!")
         st.rerun()
 
 with c2:
-    st.subheader("Diagnostics & Visualizations")
+    st.subheader("Analysis Dashboard")
     
     if st.session_state.last_raw_response is not None:
-        with st.expander("🔍 Live ClimateNA Diagnostic Console", expanded=True):
+        with st.expander("🔍 Live ClimateNA Diagnostic Console"):
             st.json(st.session_state.last_raw_response)
         
     try:
@@ -148,23 +144,64 @@ with c2:
         df = pd.DataFrame(columns=headers)
         
     if df.empty:
-        st.info("No records found yet.")
+        st.info("The database is currently empty. Submit a data entry on the left to initialize the analysis models.")
     else:
-        st.write("**Current Ledger View:**")
-        st.dataframe(df, use_container_width=True)
+        # 2. DYNAMIC CHART GRAPH FILTER INTERFACES
+        st.write("---")
+        st.subheader("Graph Configurations")
         
-        # Prepare numbers safely for trends chart
+        f_col1, f_col2, f_col3 = st.columns(3)
+        
+        with f_col1:
+            # Axis metric selector tool
+            x_var = st.selectbox(
+                "Select Climate Variable (X-Axis):", 
+                ["MAT_Year", "MAT_Normal"], 
+                format_func=lambda x: "Collection Year Mean Temp (MAT_Year)" if x == "MAT_Year" else "Baseline Normal Temp (MAT_Normal)"
+            )
+        with f_col2:
+            # Species selector tracking tool
+            distinct_species = ["All Species"] + list(df["Species"].unique())
+            selected_spp = st.selectbox("Filter by Species:", distinct_species)
+        with f_col3:
+            # Phenology status selector tags
+            st.write("**Filter Graph Status:**")
+            show_flowering = st.checkbox("Show Flowering Data", value=True)
+            show_fruiting = st.checkbox("Show Fruiting Data", value=True)
+            
+        # Parse datasets iteratively based on parameters selected above
         plot_df = df.copy()
-        plot_df["MAT_Year"] = pd.to_numeric(plot_df["MAT_Year"], errors='coerce')
-        plot_df = plot_df.dropna(subset=["MAT_Year"])
         
-        if not plot_df.empty:
+        # Enforce numeric conversion on selected climate variable to prevent plotting errors
+        plot_df[x_var] = pd.to_numeric(plot_df[x_var], errors='coerce')
+        plot_df = plot_df.dropna(subset=[x_var, "DOY"])
+        
+        # Filter by Species if a specific one is selected
+        if selected_spp != "All Species":
+            plot_df = plot_df[plot_df["Species"] == selected_spp]
+            
+        # Filter by Phenology status checkboxes
+        if not show_flowering:
+            plot_df = plot_df[plot_df["Flowering"] != True]
+        if not show_fruiting:
+            plot_df = plot_df[plot_df["Fruiting"] != True]
+            
+        if plot_df.empty:
+            st.warning("No data points match the selected filters.")
+        else:
+            # Render interactive visualization chart
             fig = px.scatter(
                 plot_df, 
-                x="MAT_Year", 
+                x=x_var, 
                 y="DOY", 
                 color="Year",
-                hover_data=["MAT_Normal", "Flowering", "Fruiting", "Vegetative"],
-                title="Phenology Trends vs Collection Year Temperature"
+                hover_data=["Species", "Latitude", "Longitude", "Elevation", "Flowering", "Fruiting"],
+                title=f"Day of Year (DOY) vs {x_var}",
+                labels={"DOY": "Day of Year Collected", x_var: f"{x_var} (°C)"},
+                color_continuous_scale=px.colors.sequential.Plasma
             )
             st.plotly_chart(fig, use_container_width=True)
+            
+        st.write("---")
+        st.subheader("Live Enriched Database View")
+        st.dataframe(df, use_container_width=True)
