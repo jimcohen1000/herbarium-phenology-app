@@ -4,13 +4,15 @@ import pandas as pd
 import plotly.express as px
 import os
 
-st.title("Herbarium Tracker - Reset")
+st.title("Herbarium Tracker - Diagnostics")
 
 # Flat data setup
 headers = ["Species", "DOY", "Year", "Latitude", "Longitude", "MAT", "Data_Source"]
 db_file = "herbarium_database_multi_source.csv"
 
-# FIXED: os is now properly imported at the top level
+if "last_raw_response" not in st.session_state:
+    st.session_state.last_raw_response = None
+
 if not os.path.exists(db_file):
     pd.DataFrame(columns=headers).to_csv(db_file, index=False)
 
@@ -32,20 +34,37 @@ with c1:
         
         mat = "Data Unavailable"
         try:
-            res = requests.get(url, timeout=10).json()
-            data = res[0] if isinstance(res, list) else res
-            if "MAT" in data and float(data["MAT"]) != -9999.0:
-                mat = float(data["MAT"])
-        except Exception:
-            pass
+            res = requests.get(url, timeout=10)
+            if res.status_code == 200:
+                try:
+                    st.session_state.last_raw_response = res.json()
+                    data = st.session_state.last_raw_response
+                    data_dict = data[0] if isinstance(data, list) else data
+                    if "MAT" in data_dict and float(data_dict["MAT"]) != -9999.0:
+                        mat = float(data_dict["MAT"])
+                except Exception:
+                    st.session_state.last_raw_response = {"Raw Text": res.text}
+            else:
+                st.session_state.last_raw_response = {"Error Code": res.status_code, "Message": res.text}
+        except Exception as e:
+            st.session_state.last_raw_response = {"Connection Error": str(e)}
             
         row = pd.DataFrame([[spp, doy, yr, lat, lon, mat, "Herbarium"]], columns=headers)
         row.to_csv(db_file, mode='a', header=False, index=False)
-        st.success("Point saved successfully!")
+        st.success("Point evaluated!")
         st.rerun()
 
 with c2:
-    st.subheader("Database & Visualizations")
+    st.subheader("Diagnostics & Database")
+    
+    # Live Console - Always visible
+    if st.session_state.last_raw_response is not None:
+        with st.expander("🔍 Live ClimateNA Diagnostic Console", expanded=True):
+            st.write("This is exactly what the server responded with:")
+            st.json(st.session_state.last_raw_response)
+    else:
+        st.info("💡 Submit a test coordinate to see the live server communication logs here.")
+        
     try:
         df = pd.read_csv(db_file)
     except Exception:
@@ -55,5 +74,7 @@ with c2:
         st.info("No records found yet.")
     else:
         st.dataframe(df, use_container_width=True)
-        fig = px.scatter(df, x="MAT", y="DOY", color="Year", title="Phenology Trends")
-        st.plotly_chart(fig, use_container_width=True)
+        valid_df = df[df["MAT"] != "Data Unavailable"]
+        if not valid_df.empty:
+            fig = px.scatter(valid_df, x="MAT", y="DOY", color="Year", title="Phenology Trends")
+            st.plotly_chart(fig, use_container_width=True)
