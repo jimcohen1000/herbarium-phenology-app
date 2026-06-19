@@ -5,12 +5,12 @@ import plotly.express as px
 import os
 from datetime import datetime, date
 
-st.title("Herbarium Tracker - Advanced Ledger")
+st.title("Herbarium Tracker - Dual Climate Sync")
 
-# Expanded data ledger with separate phenology status columns
+# Expanded headers to hold both specific year and baseline normal metrics
 headers = [
     "Species", "DOY", "Year", "Latitude", "Longitude", "Elevation",
-    "Flowering", "Fruiting", "Vegetative", "MAT", "Data_Source"
+    "Flowering", "Fruiting", "Vegetative", "MAT_Year", "MAT_Normal", "Data_Source"
 ]
 db_file = "herbarium_database_multi_source.csv"
 
@@ -32,7 +32,6 @@ else:
 with st.sidebar:
     st.header("⚙️ Database Controls")
     
-    # Try reading the current dataset size for user reference
     try:
         current_df = pd.read_csv(db_file)
         row_count = len(current_df)
@@ -42,7 +41,6 @@ with st.sidebar:
         
     st.metric(label="Total Records Stored", value=row_count)
     
-    # Download Button Engine
     if row_count > 0:
         csv_data = current_df.to_csv(index=False).encode('utf-8')
         st.download_button(
@@ -56,7 +54,6 @@ with st.sidebar:
         
     st.write("---")
     
-    # Wipe/Reset Button Engine
     if st.button("⚠️ Wipe & Reset Database"):
         pd.DataFrame(columns=headers).to_csv(db_file, index=False)
         st.success("Database table completely cleared!")
@@ -75,7 +72,6 @@ with c1:
     
     st.info(f"📅 DOY: **{doy}** | Year: **{yr}**")
     
-    # NEW: Separate, distinct phenotype checkboxes
     st.write("**Phenology Status (Select all that apply):**")
     is_flowering = st.checkbox("Flowering", value=True)
     is_fruiting = st.checkbox("Fruiting", value=False)
@@ -89,66 +85,25 @@ with c1:
     
     if btn:
         q_yr = 2024 if yr > 2024 else (1901 if yr < 1901 else yr)
-        url = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=t1&lat={lat}&lon={lon}&el={el}&prd=%20Year_{q_yr}.ann&varYSM=YSM"
         
-        mat = "Data Unavailable"
-        try:
-            res = requests.get(url, timeout=10)
-            if res.status_code == 200:
-                try:
-                    st.session_state.last_raw_response = res.json()
-                    data = st.session_state.last_raw_response
-                    data_dict = data[0] if isinstance(data, list) else data
-                    if "MAT" in data_dict and float(data_dict["MAT"]) != -9999.0:
-                        mat = float(data_dict["MAT"])
-                except Exception:
-                    st.session_state.last_raw_response = {"Raw Text": res.text}
-            else:
-                st.session_state.last_raw_response = {"Error Code": res.status_code, "Message": res.text}
-        except Exception as e:
-            st.session_state.last_raw_response = {"Connection Error": str(e)}
-            
-        # Compile row using the new individual boolean column indicators
-        row = pd.DataFrame([[
-            spp, doy, yr, lat, lon, el,
-            is_flowering, is_fruiting, is_vegetative,
-            mat, "Herbarium"
-        ]], columns=headers)
+        # Build endpoints for both Target Year and Baseline Normal profiles
+        url_year = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=t1&lat={lat}&lon={lon}&el={el}&prd=Year_{q_yr}.ann&varYSM=YSM"
+        url_norm = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=t2&lat={lat}&lon={lon}&el={el}&prd=%20Normal_1961_1990.nrm&varYSM=YSM"
         
-        row.to_csv(db_file, mode='a', header=False, index=False)
-        st.success("Point saved successfully!")
-        st.rerun()
+        mat_year = "Data Unavailable"
+        mat_norm = "Data Unavailable"
+        diagnostic_log = {}
 
-with c2:
-    st.subheader("Diagnostics & Visualizations")
-    
-    if st.session_state.last_raw_response is not None:
-        with st.expander("🔍 Live ClimateNA Diagnostic Console"):
-            st.json(st.session_state.last_raw_response)
-        
-    try:
-        df = pd.read_csv(db_file)
-    except Exception:
-        df = pd.DataFrame(columns=headers)
-        
-    if df.empty:
-        st.info("No records found yet.")
-    else:
-        st.write("**Current Ledger View:**")
-        st.dataframe(df, use_container_width=True)
-        
-        # Clean up column tracking schemas before plotting
-        plot_df = df.copy()
-        plot_df["MAT"] = pd.to_numeric(plot_df["MAT"], errors='coerce')
-        plot_df = plot_df.dropna(subset=["MAT"])
-        
-        if not plot_df.empty:
-            fig = px.scatter(
-                plot_df, 
-                x="MAT", 
-                y="DOY", 
-                color="Year",
-                hover_data=["Flowering", "Fruiting", "Vegetative"],
-                title="Phenology Trends vs Annual Mean Temperature"
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        # Call 1: Specific Target Year
+        try:
+            res_yr = requests.get(url_year, timeout=10)
+            if res_yr.status_code == 200:
+                data_yr = res_yr.json()
+                diagnostic_log["Year_API_Response"] = data_yr
+                dict_yr = data_yr[0] if isinstance(data_yr, list) else data_yr
+                if "MAT" in dict_yr and float(dict_yr["MAT"]) != -9999.0:
+                    mat_year = float(dict_yr["MAT"])
+            else:
+                diagnostic_log["Year_API_Error"] = f"Code {res_yr.status_code}"
+        except Exception as e:
+            diagnostic_
