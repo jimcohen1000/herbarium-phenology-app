@@ -2,152 +2,58 @@ import streamlit as st
 import requests
 import pandas as pd
 import plotly.express as px
-import os
-from datetime import datetime, date
-import time
 
-st.set_page_config(layout="wide")
-st.title("Herbarium & iNaturalist Phenology Tracker")
+st.title("Herbarium Tracker - Reset")
 
-DB_FILE = "herbarium_database_multi_source.csv"
+# Flat data setup
+headers = ["Species", "DOY", "Year", "Latitude", "Longitude", "MAT", "Data_Source"]
+db_file = "herbarium_database_multi_source.csv"
 
-# Safe database initialization
-headers = [
-    "Species", "DOY", "Year", "Phenology_Stage", "Latitude", "Longitude", "Elevation", 
-    "MAT", "Tave_Spring", "Tave_Summer", "Tave_May", "Data_Source"
-]
-if not os.path.exists(DB_FILE):
-    pd.DataFrame(columns=headers).to_csv(DB_FILE, index=False)
-else:
-    try:
-        test_df = pd.read_csv(DB_FILE)
-        if test_df.columns.tolist() != headers:
-            pd.DataFrame(columns=headers).to_csv(DB_FILE, index=False)
-    except Exception:
-        pd.DataFrame(columns=headers).to_csv(DB_FILE, index=False)
+# Safe simple init
+if not os.path.exists(db_file):
+    pd.DataFrame(columns=headers).to_csv(db_file, index=False)
 
-# Setup layout blocks safely at the top level
-col1, col2 = st.columns([1, 2])
+# Super compact columns
+c1, c2 = st.columns(2)
 
-if "last_raw_response" not in st.session_state:
-    st.session_state.last_raw_response = None
-
-# Case-insensitive data parser
-def extract_climate_var(data_dict, key):
-    if not isinstance(data_dict, dict):
-        return None
-    clean_dict = {str(k).lower().strip(): v for k, v in data_dict.items()}
-    target_key = str(key).lower().strip()
-    if target_key in clean_dict:
-        val = clean_dict[target_key]
-        try:
-            if val is not None and float(val) != -9999.0:
-                return float(val)
-        except ValueError:
-            pass
-    return None
-
-# ----------------- SIDEBAR: iNATURALIST BATCH IMPORTER -----------------
-with st.sidebar:
-    st.header("📥 iNaturalist Importer")
-    st.write("Pull iNaturalist research-grade data down.")
+with c1:
+    st.subheader("Manual Data Entry")
+    spp = st.text_input("Species Name", "Anemone patens")
+    yr = st.number_input("Year Collected", 1900, 2026, 2020)
+    doy = st.number_input("Day of Year (DOY)", 1, 365, 120)
+    lat = st.number_input("Latitude", 40.0, 60.0, 51.176)
+    lon = st.number_input("Longitude", -130.0, -60.0, -115.568)
+    btn = st.button("Save Point")
     
-    inat_species = st.text_input("Species to Import from iNat", placeholder="e.g., Anemone patens", key="inat_spp_input")
-    max_results = st.slider("Max observations to pull", 5, 50, 20, key="inat_slider")
-    import_clicked = st.button("Fetch & Process iNat Data", key="inat_btn")
-    
-    if import_clicked and inat_species.strip():
-        inat_url = f"https://api.inaturalist.org/v1/observations?species_name={inat_species}&quality_grade=research&term_id=1&per_page={max_results}"
+    if btn:
+        # Direct URL call with no hidden dictionary blocks
+        q_yr = 2024 if yr > 2024 else yr
+        url = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=t1&lat={lat}&lon={lon}&el=1200&prd=Year_{q_yr}&varYSM=YSM"
         
-        inat_res = None
+        mat = "Data Unavailable"
         try:
-            with st.spinner("Connecting to iNaturalist..."):
-                inat_res = requests.get(inat_url, timeout=15).json()
-        except Exception as e:
-            st.error(f"Failed to connect to iNaturalist: {str(e)}")
+            res = requests.get(url, timeout=10).json()
+            data = res[0] if isinstance(res, list) else res
+            if "MAT" in data and float(data["MAT"]) != -9999.0:
+                mat = float(data["MAT"])
+        except Exception:
+            pass
             
-        if inat_res is not None:
-            obs_list = inat_res.get("results", [])
-            if not obs_list:
-                st.warning("No research-grade observations found.")
-            else:
-                new_rows = []
-                progress_bar = st.progress(0)
-                total_items = len(obs_list)
-                
-                for idx in range(total_items):
-                    obs = obs_list[idx]
-                    obs_date_str = obs.get("observed_on")
-                    if not obs_date_str:
-                        continue
-                    
-                    obs_date = datetime.strptime(obs_date_str, "%Y-%m-%d")
-                    year = obs_date.year
-                    doy = int(obs_date.strftime("%j"))
-                    
-                    if year < 1901:
-                        continue
-                    query_year = 2024 if year > 2024 else year
-                    
-                    location = obs.get("location")
-                    if not location:
-                        continue
-                    lat, lon = map(float, location.split(","))
-                    
-                    el = obs.get("elevation", None)
-                    el = int(float(el)) if (el is not None and float(el) > 0) else 1200
-                    
-                    stages = []
-                    annotations = obs.get("annotations", [])
-                    for ann in annotations:
-                        if ann.get("controlled_term_id") == 1:
-                            val = ann.get("controlled_value_id")
-                            if val == 2:
-                                stages.append("Flowering")
-                            if val == 3:
-                                stages.append("Fruiting")
-                    
-                    phenology_stage = ", ".join(stages) if stages else "None"
-                    
-                    mat_val, t_spring_val, t_summer_val, t_may_val = "Data Unavailable", "Data Unavailable", "Data Unavailable", "Data Unavailable"
-                    api_url = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1={idx}&ID2=test1&lat={lat}&lon={lon}&el={el}&prd=Year_{query_year}&varYSM=YSM"
-                    
-                    cl_res = None
-                    try:
-                        cl_res = requests.get(api_url, timeout=7).json()
-                        st.session_state.last_raw_response = cl_res
-                    except Exception:
-                        pass
-                    
-                    data_dict = {}
-                    if isinstance(cl_res, list) and cl_res:
-                        data_dict = cl_res[0]
-                    elif isinstance(cl_res, dict):
-                        data_dict = cl_res
-                    
-                    # FIXED LINE 131: Extracted directly via dedicated clean string variables
-                    # Short variables to prevent clipboard line splits
-                    k1 = "MAT"
-                    k2 = "Tave_sp"
-                    k3 = "Tave_sm"
-                    k4 = "Tave_05"
-                    
-                    v_mat = extract_climate_var(data_dict, k1)
-                    v_sp = extract_climate_var(data_dict, k2)
-                    v_sm = extract_climate_var(data_dict, k3)
-                    v_m5 = extract_climate_var(data_dict, k4)
-                    
-                    if v_mat is not None: mat_val = v_mat
-                    if v_sp is not None: t_spring_val = v_sp
-                    if v_sm is not None: t_summer_val = v_sm
-                    if v_m5 is not None: t_may_val = v_m5
-                    
-                    row_entry = [inat_species, doy, year, phenology_stage, lat, lon, el, mat_val, t_spring_val, t_summer_val, t_may_val, "iNaturalist"]
-                    new_rows.append(row_entry)
-                    
-                    time.sleep(0.05)
-                    progress_bar.progress((idx + 1) / total_items)
-                
-                if new_rows:
-                    inat_df = pd.DataFrame(new_rows, columns=headers)
-                    inat
+        row = pd.DataFrame([[spp, doy, yr, lat, lon, mat, "Herbarium"]], columns=headers)
+        row.to_csv(db_file, mode='a', header=False, index=False)
+        st.success("Point saved successfully!")
+        st.rerun()
+
+with c2:
+    st.subheader("Database & Visualizations")
+    try:
+        df = pd.read_csv(db_file)
+    except Exception:
+        df = pd.DataFrame(columns=headers)
+        
+    if df.empty:
+        st.info("No records found yet.")
+    else:
+        st.dataframe(df, use_container_width=True)
+        fig = px.scatter(df, x="MAT", y="DOY", color="Year", title="Phenology Trends")
+        st.plotly_chart(fig, use_container_width=True)
