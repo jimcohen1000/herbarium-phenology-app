@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import pandas as pd
 import plotly.express as px
+import os
 
 st.title("Herbarium Tracker - Reset")
 
@@ -9,7 +10,7 @@ st.title("Herbarium Tracker - Reset")
 headers = ["Species", "DOY", "Year", "Latitude", "Longitude", "MAT", "Data_Source"]
 db_file = "herbarium_database_multi_source.csv"
 
-# Safe simple init
+# FIXED: os is now properly imported at the top level
 if not os.path.exists(db_file):
     pd.DataFrame(columns=headers).to_csv(db_file, index=False)
 
@@ -26,7 +27,6 @@ with c1:
     btn = st.button("Save Point")
     
     if btn:
-        # Direct URL call with no hidden dictionary blocks
         q_yr = 2024 if yr > 2024 else yr
         url = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=t1&lat={lat}&lon={lon}&el=1200&prd=Year_{q_yr}&varYSM=YSM"
         
