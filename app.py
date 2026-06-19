@@ -63,7 +63,7 @@ with col1:
             year = collection_date.year
             doy = int(collection_date.strftime("%j")) 
             
-            # Default fallback values if API fails
+            # Default fallback text if API fails
             mat_val = "Data Unavailable"
             t_spring_val = "Data Unavailable"
             t_summer_val = "Data Unavailable"
@@ -71,8 +71,6 @@ with col1:
             
             if year >= 1901:
                 prd_string = f"Year_{year}"
-                
-                # FIXED: URL broken into explicit text chunks to bypass string wrapping issues completely
                 api_base = "https://api6.climatebc.ca/api/clmApi6/LatLonEl"
                 api_params = f"?ID1=1&ID2=test&lat={lat}&lon={lon}&el={el}&prd={prd_string}&varYSM=YSM"
                 api_url = api_base + api_params
@@ -81,16 +79,55 @@ with col1:
                     with st.spinner("Fetching climate data from ClimateNA..."):
                         response = requests.get(api_url, timeout=10)
                         
-                        if response.status_code == 200:
-                            data_json = response.json()
+                    if response.status_code == 200:
+                        data_json = response.json()
+                        data_dict = data_json[0] if isinstance(data_json, list) and data_json else data_json
+                        
+                        if isinstance(data_dict, dict):
+                            # Clean, line-by-line dictionary extraction
+                            v_mat = data_dict.get("MAT")
+                            v_sp = data_dict.get("Tave_sp")
+                            v_sm = data_dict.get("Tave_sm")
+                            v_m5 = data_dict.get("Tave05")
                             
-                            data_dict = {}
-                            if isinstance(data_json, list) and len(data_json) > 0:
-                                data_dict = data_json[0]
-                            elif isinstance(data_json, dict):
-                                data_dict = data_json
-                            
-                            mat = data_dict.get("MAT", None)
-                            t_spring = data_dict.get("Tave_sp", None) 
-                            t_summer = data_dict.get("Tave_sm", None) 
-                            t
+                            if v_mat is not None: mat_val = float(v_mat)
+                            if v_sp is not None: t_spring_val = float(v_sp)
+                            if v_sm is not None: t_summer_val = float(v_sm)
+                            if v_m5 is not None: t_may_val = float(v_m5)
+                except Exception as e:
+                    pass 
+            
+            # Write row to CSV file safely
+            new_data = pd.DataFrame([[species, doy, year, phenology_stage, lat, lon, el, mat_val, t_spring_val, t_summer_val, t_may_val]], 
+                                    columns=["Species", "DOY", "Year", "Phenology_Stage", "Latitude", "Longitude", "Elevation", "MAT", "Tave_Spring", "Tave_Summer", "Tave_May"])
+            new_data.to_csv(DB_FILE, mode='a', header=False, index=False)
+            
+            if isinstance(mat_val, float):
+                st.success(f"Added {species}! Captured Annual, Seasonal, and Monthly parameters.")
+            else:
+                st.warning(f"Added {species}, but ClimateNA variables were unavailable.")
+            
+            st.rerun()
+
+# 3. Interactive Graphing & Data Viewer (Right Column)
+with col2:
+    st.header("Analysis Dashboard")
+    
+    df = pd.read_csv(DB_FILE)
+    
+    df_plot_clean = df.copy()
+    df_plot_clean["MAT"] = pd.to_numeric(df_plot_clean["MAT"], errors='coerce')
+    df_plot_clean["Tave_Spring"] = pd.to_numeric(df_plot_clean["Tave_Spring"], errors='coerce')
+    df_plot_clean["Tave_Summer"] = pd.to_numeric(df_plot_clean["Tave_Summer"], errors='coerce')
+    df_plot_clean["Tave_May"] = pd.to_numeric(df_plot_clean["Tave_May"], errors='coerce')
+    df_plot_clean["DOY"] = pd.to_numeric(df_plot_clean["DOY"], errors='coerce')
+    df_plot_clean["Year"] = pd.to_numeric(df_plot_clean["Year"], errors='coerce')
+        
+    graph_df = df_plot_clean.dropna(subset=["DOY", "Year"])
+    
+    # Sidebar control to reset database if needed
+    if st.sidebar.button("⚠️ Reset Database (Clear Rows)"):
+        if os.path.exists(DB_FILE):
+            os.remove(DB_FILE)
+        init_db()
+        st
