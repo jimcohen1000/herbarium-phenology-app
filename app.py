@@ -102,7 +102,7 @@ with st.sidebar:
                     
                     mat_val, t_spring_val, t_summer_val, t_may_val = "Data Unavailable", "Data Unavailable", "Data Unavailable", "Data Unavailable"
                     
-                    api_url = f"https://api6.climatebc.ca/api/clmApi6/LatLonEl?ID1={idx}&ID2=iNat&lat={lat}&lon={lon}&el={el}&prd={year}&varYSM=YSM"
+                    api_url = f"https://api6.climatena.ca/api/clmApi6/LatLonEl?ID1={idx}&ID2=iNat&lat={lat}&lon={lon}&el={el}&prd={year}&varYSM=YSM"
                     
                     try:
                         cl_res = requests.get(api_url, timeout=7).json()
@@ -180,7 +180,7 @@ if st.session_state.form_data is not None:
     mat_val, t_spring_val, t_summer_val, t_may_val = "Data Unavailable", "Data Unavailable", "Data Unavailable", "Data Unavailable"
     
     if year >= 1901:
-        api_url = f"https://api6.climatebc.ca/api/clmApi6/LatLonEl?ID1=1&ID2=Herb&lat={data['lat']}&lon={data['lon']}&el={data['el']}&prd={year}&varYSM=YSM"
+        api_url = f"https://api6.climatena.ca/api/clmApi6/LatLonEl?ID1=1&ID2=Herb&lat={data['lat']}&lon={data['lon']}&el={data['el']}&prd={year}&varYSM=YSM"
         
         try:
             response = requests.get(api_url, timeout=10)
