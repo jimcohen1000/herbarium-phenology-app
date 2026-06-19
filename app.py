@@ -110,9 +110,104 @@ with st.sidebar:
                     t_summer_val = "Data Unavailable"
                     t_may_val = "Data Unavailable"
                     
-                    api_url = f"https://api6.climatebc.ca/api/clmApi6/LatLonEl?ID1={idx}&ID2=iNat&lat={lat}&lon={lon}&el={el}&prd={year}&varYSM=YSM"
+                    # API Syntax explicitly identifying database system request targets
+                    api_url = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1={idx}&ID2=ClimateNA&lat={lat}&lon={lon}&el={el}&prd={year}&varYSM=YSM"
                     
                     try:
                         cl_res = requests.get(api_url, timeout=7).json()
                         st.session_state.last_raw_response = cl_res
-                        data_dict = cl_res[0] if isinstance(cl_res, list) and cl
+                        
+                        # FIXED LINE 118: Decoupled into an explicit, robust multi-line structure
+                        data_dict = {}
+                        if isinstance(cl_res, list):
+                            if len(cl_res) > 0:
+                                data_dict = cl_res[0]
+                        elif isinstance(cl_res, dict):
+                            data_dict = cl_res
+                        
+                        v_mat = extract_climate_var(data_dict, ["MAT"])
+                        v_sp = extract_climate_var(data_dict, ["Tave_sp"])
+                        v_sm = extract_climate_var(data_dict, ["Tave_sm"])
+                        v_m5 = extract_climate_var(data_dict, ["Tave05"])
+                        
+                        if v_mat is not None: mat_val = v_mat
+                        if v_sp is not None: t_spring_val = v_sp
+                        if v_sm is not None: t_summer_val = v_sm
+                        if v_m5 is not None: t_may_val = v_m5
+                    except Exception:
+                        pass
+                    
+                    new_rows.append([inat_species, doy, year, phenology_stage, lat, lon, el, mat_val, t_spring_val, t_summer_val, t_may_val, "iNaturalist"])
+                    time.sleep(0.1)
+                    progress_bar.progress((idx + 1) / len(obs_list))
+                
+                if new_rows:
+                    inat_df = pd.DataFrame(new_rows, columns=[
+                        "Species", "DOY", "Year", "Phenology_Stage", "Latitude", "Longitude", "Elevation", 
+                        "MAT", "Tave_Spring", "Tave_Summer", "Tave_May", "Data_Source"
+                    ])
+                    inat_df.to_csv(DB_FILE, mode='a', header=False, index=False)
+                    st.success(f"Processed and merged {len(new_rows)} rows!")
+                    st.rerun()
+        except Exception as e:
+            st.error(f"iNaturalist tracking failure: {str(e)}")
+
+# ----------------- LEFT COLUMN: HERBARIUM MANUAL INPUT -----------------
+with col1:
+    st.header("Enter Herbarium Label Data")
+    
+    with st.form("herbarium_form"):
+        species = st.text_input("Plant Species", placeholder="e.g., Anemone patens")
+        collection_date = st.date_input("Collection Date", value=date(2000, 5, 1), min_value=date(1850, 1, 1), max_value=date(2050, 12, 31))
+        
+        st.write("Phenology Stage (Select all that apply):")
+        c_flowering = st.checkbox("Flowering")
+        c_fruiting = st.checkbox("Fruiting")
+        c_none = st.checkbox("None / Vegetative Only")
+        
+        lat = st.number_input("Latitude", format="%.5f", value=51.17641)
+        lon = st.number_input("Longitude", format="%.5f", value=-115.56820)
+        el = st.number_input("Elevation (meters)", min_value=0, value=1420)
+        
+        submitted = st.form_submit_button("Grab ClimateNA Data & Plot")
+
+        if submitted:
+            stages = []
+            if c_flowering: stages.append("Flowering")
+            if c_fruiting: stages.append("Fruiting")
+            if c_none: stages.append("None")
+            phenology_stage = ", ".join(stages) if stages else "Unspecified"
+
+            if not species.strip():
+                st.error("Please enter a plant species name.")
+            else:
+                st.session_state.form_data = {
+                    "species": species, "date": collection_date, "stage": phenology_stage,
+                    "lat": lat, "lon": lon, "el": el
+                }
+
+# PROCESS FORM DATA SAFELY OUTSIDE THE FORM CONTAINER Scope
+if st.session_state.form_data is not None:
+    data = st.session_state.form_data
+    st.session_state.form_data = None 
+    year = data["date"].year
+    doy = int(data["date"].strftime("%j"))
+    
+    mat_val = "Data Unavailable"
+    t_spring_val = "Data Unavailable"
+    t_summer_val = "Data Unavailable"
+    t_may_val = "Data Unavailable"
+    
+    if year >= 1901:
+        api_url = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=ClimateNA&lat={data['lat']}&lon={data['lon']}&el={data['el']}&prd={year}&varYSM=YSM"
+        
+        try:
+            response = requests.get(api_url, timeout=10)
+            if response.status_code == 200:
+                data_json = response.json()
+                st.session_state.last_raw_response = data_json
+                
+                data_dict = {}
+                if isinstance(data_json, list):
+                    if len(data_json) > 0:
+                        data_dict = data_
