@@ -9,6 +9,7 @@ from datetime import datetime, date
 st.set_page_config(layout="wide")
 st.title("Herbarium Tracker: Research Ledger")
 
+# Updated Headers
 headers = [
     "Collector", "Col_Number", "Barcode", "Species", "DOY", "Year", 
     "Latitude", "Longitude", "Elevation", "Flowering", "Fruiting", 
@@ -31,13 +32,13 @@ c1, c2 = st.columns([1, 1.5])
 
 with c1:
     st.subheader("Manual Data Entry")
-    # Added fields before Species
     collector = st.text_input("Collector Name")
     col_num = st.text_input("Collector Number")
     barcode = st.text_input("Barcode")
     spp = st.text_input("Species")
     
-    date_val = st.date_input("Date", value=date(2020, 5, 1))
+    # Year range extended to 1900-2030
+    date_val = st.date_input("Date", min_value=date(1900, 1, 1), max_value=date(2030, 12, 31), value=date(2020, 5, 1))
     yr, doy = date_val.year, int(date_val.strftime("%j"))
     
     flow, fruit, veg = st.checkbox("Flowering"), st.checkbox("Fruiting"), st.checkbox("Vegetative")
@@ -48,7 +49,7 @@ with c1:
     
     if st.button("Save Entry"):
         base = "https://api.climatena.ca/api/cnaApi6/LatLonEl"
-        # Using standardized prd strings for ClimateNA
+        # Standardized ClimateNA parameter structure
         u_yr = f"{base}?ID1=1&ID2=t1&lat={lat}&lon={lon}&el={el}&prd=Year_{yr}&varYSM=Y"
         u_nm = f"{base}?ID1=1&ID2=t2&lat={lat}&lon={lon}&el={el}&prd=Normal_1961_1990&varYSM=Y"
         
