@@ -126,6 +126,7 @@ with st.sidebar:
                         data_dict = cl_res
                     
                     # FIXED LINE 131: Extracted directly via dedicated clean string variables
+                    # Short variables to prevent clipboard line splits
                     k1 = "MAT"
                     k2 = "Tave_sp"
                     k3 = "Tave_sm"
