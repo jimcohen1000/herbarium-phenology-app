@@ -71,4 +71,26 @@ with col1:
             
             if year >= 1901:
                 prd_string = f"Year_{year}"
-                api_url = f"https://api6.climatebc.ca/api/clmApi6/LatLonEl?ID1=1&ID2=test&lat={lat}&lon={lon}&el={el
+                
+                # FIXED: URL broken into explicit text chunks to bypass string wrapping issues completely
+                api_base = "https://api6.climatebc.ca/api/clmApi6/LatLonEl"
+                api_params = f"?ID1=1&ID2=test&lat={lat}&lon={lon}&el={el}&prd={prd_string}&varYSM=YSM"
+                api_url = api_base + api_params
+                
+                try:
+                    with st.spinner("Fetching climate data from ClimateNA..."):
+                        response = requests.get(api_url, timeout=10)
+                        
+                        if response.status_code == 200:
+                            data_json = response.json()
+                            
+                            data_dict = {}
+                            if isinstance(data_json, list) and len(data_json) > 0:
+                                data_dict = data_json[0]
+                            elif isinstance(data_json, dict):
+                                data_dict = data_json
+                            
+                            mat = data_dict.get("MAT", None)
+                            t_spring = data_dict.get("Tave_sp", None) 
+                            t_summer = data_dict.get("Tave_sm", None) 
+                            t
