@@ -105,4 +105,55 @@ with st.sidebar:
                     
                     phenology_stage = ", ".join(stages) if stages else "None"
                     
-                    mat_val, t_spring_val, t_summer_val, t_may_val = "Data Unavailable", "Data Unavailable", "Data Unavailable",
+                    # FIXED INDIVIDUAL LINES: Clean explicit string defaults split safely
+                    mat_val = "Data Unavailable"
+                    t_spring_val = "Data Unavailable"
+                    t_summer_val = "Data Unavailable"
+                    t_may_val = "Data Unavailable"
+                    
+                    # API Syntax targeting exact ClimateNA documentation
+                    api_url = f"https://api6.climatebc.ca/api/clmApi6/LatLonEl?ID1={idx}&ID2=iNat&lat={lat}&lon={lon}&el={el}&prd={year}&varYSM=YSM"
+                    
+                    try:
+                        cl_res = requests.get(api_url, timeout=7).json()
+                        st.session_state.last_raw_response = cl_res
+                        data_dict = cl_res[0] if isinstance(cl_res, list) and cl_res else cl_res
+                        
+                        v_mat = extract_climate_var(data_dict, ["MAT"])
+                        v_sp = extract_climate_var(data_dict, ["Tave_sp"])
+                        v_sm = extract_climate_var(data_dict, ["Tave_sm"])
+                        v_m5 = extract_climate_var(data_dict, ["Tave05"])
+                        
+                        if v_mat is not None: mat_val = v_mat
+                        if v_sp is not None: t_spring_val = v_sp
+                        if v_sm is not None: t_summer_val = v_sm
+                        if v_m5 is not None: t_may_val = v_m5
+                    except Exception:
+                        pass
+                    
+                    new_rows.append([inat_species, doy, year, phenology_stage, lat, lon, el, mat_val, t_spring_val, t_summer_val, t_may_val, "iNaturalist"])
+                    time.sleep(0.1)
+                    progress_bar.progress((idx + 1) / len(obs_list))
+                
+                if new_rows:
+                    inat_df = pd.DataFrame(new_rows, columns=[
+                        "Species", "DOY", "Year", "Phenology_Stage", "Latitude", "Longitude", "Elevation", 
+                        "MAT", "Tave_Spring", "Tave_Summer", "Tave_May", "Data_Source"
+                    ])
+                    inat_df.to_csv(DB_FILE, mode='a', header=False, index=False)
+                    st.success(f"Processed and merged {len(new_rows)} rows!")
+                    st.rerun()
+        except Exception as e:
+            st.error(f"iNaturalist tracking failure: {str(e)}")
+
+# ----------------- LEFT COLUMN: HERBARIUM MANUAL INPUT -----------------
+with col1:
+    st.header("Enter Herbarium Label Data")
+    
+    with st.form("herbarium_form"):
+        species = st.text_input("Plant Species", placeholder="e.g., Anemone patens")
+        collection_date = st.date_input("Collection Date", value=date(2000, 5, 1), min_value=date(1850, 1, 1), max_value=date(2050, 12, 31))
+        
+        st.write("Phenology Stage (Select all that apply):")
+        c_flowering = st.checkbox("Flowering")
+        c_fruiting = st.checkbox
