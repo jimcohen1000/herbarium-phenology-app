@@ -3,8 +3,9 @@ import requests
 import pandas as pd
 import plotly.express as px
 import os
+from datetime import datetime, date
 
-st.title("Herbarium Tracker - Diagnostics")
+st.title("Herbarium Tracker - Dynamic Climate Sync")
 
 # Flat data setup
 headers = ["Species", "DOY", "Year", "Latitude", "Longitude", "MAT", "Data_Source"]
@@ -22,16 +23,28 @@ c1, c2 = st.columns(2)
 with c1:
     st.subheader("Manual Data Entry")
     spp = st.text_input("Species Name", "Anemone patens")
-    yr = st.number_input("Year Collected", 1901, 2026, 2020)
-    doy = st.number_input("Day of Year (DOY)", 1, 365, 120)
-    lat = st.number_input("Latitude", 40.0, 60.0, 51.176)
-    lon = st.number_input("Longitude", -130.0, -60.0, -115.568)
-    el = st.number_input("Elevation (meters)", min_value=0, value=1420) # Dynamic elevation input
-    btn = st.button("Save Point")
+    
+    # 1. CALCULATE DAY OF YEAR: Replaced numeric year with a proper Calendar Picker
+    chosen_date = st.date_input("Collection Date", value=date(2020, 5, 1))
+    
+    # Extract structural date parts automatically
+    yr = chosen_date.year
+    doy = int(chosen_date.strftime("%j")) # Converts date directly to Day of Year (1-366)
+    
+    # Display the calculated day to the user for clarity
+    st.info(f"📅 Calculated Day of Year (DOY): **{doy}** | Year: **{yr}**")
+    
+    lat = st.number_input("Latitude", format="%.5f", value=51.17641)
+    lon = st.number_input("Longitude", format="%.5f", value=-115.56820)
+    el = st.number_input("Elevation (meters)", min_value=0, value=1420)
+    btn = st.button("Save & Link Climate Data")
     
     if btn:
-        # FIXED: Using your precise Normal baseline string format and dynamic elevation variable
-        url = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=t1&lat={lat}&lon={lon}&el={el}&prd=%20Normal_1961_1990.nrm&varYSM=YSM"
+        # Cap the historical lookup bounds safely based on available ClimateNA datasets
+        q_yr = 2024 if yr > 2024 else (1901 if yr < 1901 else yr)
+        
+        # 2. DYNAMIC ANNUAL YEAR QUERY: Swaps out the hardcoded normal string for Year_XXXX.ann
+        url = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=t1&lat={lat}&lon={lon}&el={el}&prd=%20Year_{q_yr}.ann&varYSM=YSM"
         
         mat = "Data Unavailable"
         try:
@@ -53,7 +66,7 @@ with c1:
             
         row = pd.DataFrame([[spp, doy, yr, lat, lon, mat, "Herbarium"]], columns=headers)
         row.to_csv(db_file, mode='a', header=False, index=False)
-        st.success("Point evaluated!")
+        st.success(f"Point registered for annual record: {q_yr}!")
         st.rerun()
 
 with c2:
@@ -64,7 +77,7 @@ with c2:
             st.write("This is exactly what the server responded with:")
             st.json(st.session_state.last_raw_response)
     else:
-        st.info("💡 Submit a test coordinate to see the live server communication logs here.")
+        st.info("💡 Submit a calendar data point on the left to review the annual payload matrix.")
         
     try:
         df = pd.read_csv(db_file)
