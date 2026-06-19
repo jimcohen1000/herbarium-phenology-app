@@ -10,6 +10,16 @@ st.title("Herbarium Tracker: Full Ledger & Analytics")
 
 db_file = "herbarium_database_expanded.csv"
 
+# 1. ALWAYS INITIALIZE THE DATABASE WITH HEADERS
+base_headers = [
+    "Collector", "Col_Number", "Barcode", "Species", "DOY", "Year",
+    "Flowering", "Fruiting", "Vegetative", "Latitude", "Longitude", "Elevation"
+]
+
+# Create the file immediately if it doesn't exist so the table shows up
+if not os.path.exists(db_file):
+    pd.DataFrame(columns=base_headers).to_csv(db_file, index=False)
+
 # --- Helper: Climate Data Fetcher ---
 def get_climate_data(lat, lon, el, prd):
     base = "https://api.climatena.ca/api/cnaApi6/LatLonEl"
@@ -23,7 +33,6 @@ def get_climate_data(lat, lon, el, prd):
     return {}
 
 # --- Layout ---
-# Slightly expanded the right column so the table has more breathing room
 c1, c2 = st.columns([1, 2.2])
 
 # Column 1: Data Collection
@@ -48,29 +57,4 @@ with c1:
     if st.button("Save Entry", use_container_width=True):
         with st.spinner("Fetching climate models..."):
             year_data = get_climate_data(lat, lon, el, f"Year_{date_val.year}")
-            norm_data = get_climate_data(lat, lon, el, "Normal_1961_1990")
-            
-            row = {
-                "Collector": collector, "Col_Number": col_num, "Barcode": barcode,
-                "Species": spp, "DOY": int(date_val.strftime("%j")), "Year": date_val.year,
-                "Flowering": flow, "Fruiting": fruit, "Vegetative": veg
-            }
-            for k, v in year_data.items(): row[f"Y_{k}"] = v
-            for k, v in norm_data.items(): row[f"N_{k}"] = v
-            
-            df_new = pd.DataFrame([row])
-            if not os.path.exists(db_file): df_new.to_csv(db_file, index=False)
-            else: df_new.to_csv(db_file, mode='a', header=False, index=False)
-            st.success("Entry saved!")
-            st.rerun()
-
-# Column 2: Graphing & Database
-with c2:
-    st.subheader("Analysis Dashboard")
-    if os.path.exists(db_file):
-        df = pd.read_csv(db_file)
-        climate_vars = [col for col in df.columns if col.startswith('Y_') or col.startswith('N_')]
-        
-        # Graph Controls
-        g1, g2 = st.columns(2)
-        with g1: x_var = st.selectbox("Select Climate Variable:", climate_vars)
+            norm_
