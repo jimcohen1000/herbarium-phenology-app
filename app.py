@@ -22,15 +22,16 @@ c1, c2 = st.columns(2)
 with c1:
     st.subheader("Manual Data Entry")
     spp = st.text_input("Species Name", "Anemone patens")
-    yr = st.number_input("Year Collected", 1900, 2026, 2020)
+    yr = st.number_input("Year Collected", 1901, 2026, 2020)
     doy = st.number_input("Day of Year (DOY)", 1, 365, 120)
     lat = st.number_input("Latitude", 40.0, 60.0, 51.176)
     lon = st.number_input("Longitude", -130.0, -60.0, -115.568)
+    el = st.number_input("Elevation (meters)", min_value=0, value=1420) # Dynamic elevation input
     btn = st.button("Save Point")
     
     if btn:
-        q_yr = 2024 if yr > 2024 else yr
-        url = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=t1&lat={lat}&lon={lon}&el=1200&prd=Year_{q_yr}&varYSM=YSM"
+        # FIXED: Using your precise Normal baseline string format and dynamic elevation variable
+        url = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=t1&lat={lat}&lon={lon}&el={el}&prd=%20Normal_1961_1990.nrm&varYSM=YSM"
         
         mat = "Data Unavailable"
         try:
@@ -39,6 +40,7 @@ with c1:
                 try:
                     st.session_state.last_raw_response = res.json()
                     data = st.session_state.last_raw_response
+                    
                     data_dict = data[0] if isinstance(data, list) else data
                     if "MAT" in data_dict and float(data_dict["MAT"]) != -9999.0:
                         mat = float(data_dict["MAT"])
@@ -57,7 +59,6 @@ with c1:
 with c2:
     st.subheader("Diagnostics & Database")
     
-    # Live Console - Always visible
     if st.session_state.last_raw_response is not None:
         with st.expander("🔍 Live ClimateNA Diagnostic Console", expanded=True):
             st.write("This is exactly what the server responded with:")
