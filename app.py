@@ -28,6 +28,26 @@ col1, col2 = st.columns([1, 2])
 
 if "form_data" not in st.session_state:
     st.session_state.form_data = None
+if "last_raw_response" not in st.session_state:
+    st.session_state.last_raw_response = None
+
+# SMART PARSER: Automatically searches key lists ignoring capitalization and punctuation
+def extract_climate_var(data_dict, keys_to_try):
+    if not isinstance(data_dict, dict):
+        return None
+    # Normalize dictionary keys to lowercase without underscores
+    norm_dict = {str(k).lower().replace("_", ""): v for k, v in data_dict.items()}
+    
+    for key in keys_to_try:
+        norm_key = key.lower().replace("_", "")
+        if norm_key in norm_dict:
+            val = norm_dict[norm_key]
+            try:
+                if val is not None and float(val) != -9999.0:
+                    return float(val)
+            except ValueError:
+                pass
+    return None
 
 # ----------------- SIDEBAR: FIXED iNATURALIST BATCH IMPORTER -----------------
 with st.sidebar:
@@ -39,7 +59,6 @@ with st.sidebar:
     import_clicked = st.button("Fetch & Process iNat Data")
     
     if import_clicked and inat_species.strip():
-        # Clean query URL targeting plant phenology annotations (term_id=1)
         inat_url = f"https://api.inaturalist.org/v1/observations?species_name={inat_species}&quality_grade=research&term_id=1&per_page={max_results}"
         
         try:
@@ -55,7 +74,6 @@ with st.sidebar:
                 progress_bar = st.progress(0)
                 
                 for idx, obs in enumerate(obs_list):
-                    # Parse Observation Date
                     obs_date_str = obs.get("observed_on")
                     if not obs_date_str: continue
                     
@@ -65,20 +83,13 @@ with st.sidebar:
                     
                     if year < 1901 or year > 2026: continue
                     
-                    # Parse Location Coordinates
                     location = obs.get("location")
                     if not location: continue
                     lat, lon = map(float, location.split(","))
                     
-                    # FIXED ELEVATION DETECTOR: Extract and guarantee a valid numerical baseline
                     el = obs.get("elevation", None)
-                    if el is None or float(el) <= 0:
-                        # Fallback default value matching typical baseline requirements if missing
-                        el = 1200 
-                    else:
-                        el = int(float(el))
+                    el = int(float(el)) if (el is not None and float(el) > 0) else 1200
                     
-                    # Parse out Phenology Stage values
                     stages = []
                     annotations = obs.get("annotations", [])
                     for ann in annotations:
@@ -89,28 +100,25 @@ with st.sidebar:
                     
                     phenology_stage = ", ".join(stages) if stages else "None"
                     
-                    # FIXED CLIMATENA CALL STRATEGY: Alternate URL syntax variants to clear errors
                     mat_val, t_spring_val, t_summer_val, t_may_val = "Data Unavailable", "Data Unavailable", "Data Unavailable", "Data Unavailable"
                     
-                    api_base = "https://api6.climatebc.ca/api/clmApi6/LatLonEl"
-                    # We pass the raw year directly to avoid string wrapping prefix conversion failure flags
-                    api_params = f"?ID1={idx}&ID2=iNat&lat={lat}&lon={lon}&el={el}&prd={year}&varYSM=YSM"
-                    api_url = api_base + api_params
+                    api_url = f"https://api6.climatebc.ca/api/clmApi6/LatLonEl?ID1={idx}&ID2=iNat&lat={lat}&lon={lon}&el={el}&prd={year}&varYSM=YSM"
                     
                     try:
                         cl_res = requests.get(api_url, timeout=7).json()
+                        st.session_state.last_raw_response = cl_res
                         data_dict = cl_res[0] if isinstance(cl_res, list) and cl_res else cl_res
                         
-                        if isinstance(data_dict, dict):
-                            v_mat = data_dict.get("MAT", data_dict.get("mat"))
-                            v_sp = data_dict.get("Tave_sp")
-                            v_sm = data_dict.get("Tave_sm")
-                            v_m5 = data_dict.get("Tave05")
-                            
-                            if v_mat is not None and float(v_mat) != -9999.0: mat_val = float(v_mat)
-                            if v_sp is not None and float(v_sp) != -9999.0: t_spring_val = float(v_sp)
-                            if v_sm is not None and float(v_sm) != -9999.0: t_summer_val = float(v_sm)
-                            if v_m5 is not None and float(v_m5) != -9999.0: t_may_val = float(v_m5)
+                        # Apply Smart Scanner extraction
+                        v_mat = extract_climate_var(data_dict, ["MAT", "mat"])
+                        v_sp = extract_climate_var(data_dict, ["Tave_sp", "TaveSp", "TaveSpring"])
+                        v_sm = extract_climate_var(data_dict, ["Tave_sm", "TaveSm", "TaveSummer"])
+                        v_m5 = extract_climate_var(data_dict, ["Tave05", "Tave_05", "TaveMay"])
+                        
+                        if v_mat is not None: mat_val = v_mat
+                        if v_sp is not None: t_spring_val = v_sp
+                        if v_sm is not None: t_summer_val = v_sm
+                        if v_m5 is not None: t_may_val = v_m5
                     except Exception:
                         pass
                     
@@ -124,7 +132,7 @@ with st.sidebar:
                         "MAT", "Tave_Spring", "Tave_Summer", "Tave_May", "Data_Source"
                     ])
                     inat_df.to_csv(DB_FILE, mode='a', header=False, index=False)
-                    st.success(f"Successfully processed and merged {len(new_rows)} rows from iNaturalist!")
+                    st.success(f"Processed and merged {len(new_rows)} rows!")
                     st.rerun()
         except Exception as e:
             st.error(f"iNaturalist tracking failure: {str(e)}")
@@ -172,25 +180,25 @@ if st.session_state.form_data is not None:
     mat_val, t_spring_val, t_summer_val, t_may_val = "Data Unavailable", "Data Unavailable", "Data Unavailable", "Data Unavailable"
     
     if year >= 1901:
-        api_base = "https://api6.climatebc.ca/api/clmApi6/LatLonEl"
-        api_params = f"?ID1=1&ID2=Herb&lat={data['lat']}&lon={data['lon']}&el={data['el']}&prd={year}&varYSM=YSM"
-        api_url = api_base + api_params
+        api_url = f"https://api6.climatebc.ca/api/clmApi6/LatLonEl?ID1=1&ID2=Herb&lat={data['lat']}&lon={data['lon']}&el={data['el']}&prd={year}&varYSM=YSM"
         
         try:
             response = requests.get(api_url, timeout=10)
             if response.status_code == 200:
                 data_json = response.json()
+                st.session_state.last_raw_response = data_json
                 data_dict = data_json[0] if isinstance(data_json, list) and data_json else data_json
+                
                 if isinstance(data_dict, dict):
-                    v_mat = data_dict.get("MAT", data_dict.get("mat"))
-                    v_sp = data_dict.get("Tave_sp")
-                    v_sm = data_dict.get("Tave_sm")
-                    v_m5 = data_dict.get("Tave05")
+                    v_mat = extract_climate_var(data_dict, ["MAT", "mat"])
+                    v_sp = extract_climate_var(data_dict, ["Tave_sp", "TaveSp", "TaveSpring"])
+                    v_sm = extract_climate_var(data_dict, ["Tave_sm", "TaveSm", "TaveSummer"])
+                    v_m5 = extract_climate_var(data_dict, ["Tave05", "Tave_05", "TaveMay"])
                     
-                    if v_mat is not None and float(v_mat) != -9999.0: mat_val = float(v_mat)
-                    if v_sp is not None and float(v_sp) != -9999.0: t_spring_val = float(v_sp)
-                    if v_sm is not None and float(v_sm) != -9999.0: t_summer_val = float(v_sm)
-                    if v_m5 is not None and float(v_m5) != -9999.0: t_may_val = float(v_m5)
+                    if v_mat is not None: mat_val = v_mat
+                    if v_sp is not None: t_spring_val = v_sp
+                    if v_sm is not None: t_summer_val = v_sm
+                    if v_m5 is not None: t_may_val = v_m5
         except Exception:
             pass
 
@@ -203,6 +211,12 @@ if st.session_state.form_data is not None:
 with col2:
     st.header("Analysis Dashboard")
     
+    # DIAGNOSTIC TOOL WINDOW: Displays raw JSON if data registers missing values
+    if st.session_state.last_raw_response is not None:
+        with st.expander("🔍 Diagnostic Console (Click to inspect last ClimateNA connection)"):
+            st.write("Below is the exact data map returned by ClimateNA:")
+            st.json(st.session_state.last_raw_response)
+            
     df = pd.read_csv(DB_FILE)
     
     df_plot_clean = df.copy()
