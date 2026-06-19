@@ -62,24 +62,24 @@ with col1:
             year = collection_date.year
             doy = int(collection_date.strftime("%j")) 
             
-            # ClimateNA API Call endpoint
-            api_url = f"https://api6.climatebc.ca/api/clmApi6/LatLonEl?lat={lat}&lon={lon}&el={el}&prd={year}&varYSM=Y"
+            # ClimateNA API Call endpoint (Added standard dummy ID parameters required by some versions of the API)
+            api_url = f"https://api6.climatebc.ca/api/clmApi6/LatLonEl?ID1=1&ID2=test&lat={lat}&lon={lon}&el={el}&prd={year}&varYSM=Y"
             
             try:
                 with st.spinner("Fetching climate data from ClimateNA..."):
                     response = requests.get(api_url, timeout=10).json()
                 
-                # FIXED: Unpack the response safely whether it arrives as a list or a direct dictionary
+                # Unpack response
                 data_dict = {}
                 if isinstance(response, list) and len(response) > 0:
                     data_dict = response[0]
                 elif isinstance(response, dict):
                     data_dict = response
                 
-                mat = data_dict.get("MAT", None)
+                # Check for either 'MAT' or lowercase 'mat'
+                mat = data_dict.get("MAT", data_dict.get("mat", None))
                 
                 if mat is not None:
-                    # Convert string temperature to float number for proper graphing
                     mat_float = float(mat)
                     
                     new_data = pd.DataFrame([[species, doy, year, phenology_stage, lat, lon, el, mat_float]], 
@@ -87,9 +87,15 @@ with col1:
                     new_data.to_csv(DB_FILE, mode='a', header=False, index=False)
                     st.success(f"Added {species} ({phenology_stage})! Calculated DOY: {doy}. MAT: {mat_float}°C.")
                 else:
-                    st.error("ClimateNA connected, but 'MAT' was missing. Note: ClimateNA only supports locations within North America and years from 1901-present.")
+                    st.error("ClimateNA connected, but 'MAT' was missing.")
+                    # DEBUG WINDOW: This shows us exactly what the API answered
+                    st.warning("Diagnostic Mode — Raw API Response:")
+                    st.write(response)
+                    
             except Exception as e:
-                st.error(f"Error processing data: {str(e)}. Please check your internet connection or coordinates.")
+                st.error(f"Error processing data: {str(e)}.")
+                if 'response' in locals():
+                    st.write("Raw Response Context:", response)
 
 # 3. Interactive Graphing & Data Viewer (Right Column)
 with col2:
@@ -105,7 +111,6 @@ with col2:
         
         plot_df = df if selected_species == "All Species" else df[df["Species"] == selected_species]
         
-        # Ensure data types are correct before rendering scatter plot
         plot_df["MAT"] = pd.to_numeric(plot_df["MAT"], errors='coerce')
         plot_df["DOY"] = pd.to_numeric(plot_df["DOY"], errors='coerce')
         
