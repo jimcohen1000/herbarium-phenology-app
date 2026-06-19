@@ -109,7 +109,6 @@ with st.sidebar:
                     query_params = f"?ID1={idx}&ID2=test1&lat={lat}&lon={lon}&el={el}&prd=%20{year}&varYSM=YSM"
                     api_url = base_url + query_params
                     
-                    # CLEANED TRY BLOCK: Isolated strictly to the web request action
                     cl_res = None
                     try:
                         cl_res = requests.get(api_url, timeout=7).json()
@@ -117,17 +116,5 @@ with st.sidebar:
                     except Exception:
                         pass
                     
-                    # Unpack values safely outside the network try container block
                     data_dict = {}
-                    if isinstance(cl_res, list) and cl_res:
-                        data_dict = cl_res[0]
-                    elif isinstance(cl_res, dict):
-                        data_dict = cl_res
-                    
-                    v_mat = extract_climate_var(data_dict, ["MAT"])
-                    v_sp = extract_climate_var(data_dict, ["Tave_sp"])
-                    v_sm = extract_climate_var(data_dict, ["Tave_sm"])
-                    v_m5 = extract_climate_var(data_dict, ["Tave05"])
-                    
-                    if v_mat is not None:
-                        mat_val = v
+                    if isinstance(cl_res,
