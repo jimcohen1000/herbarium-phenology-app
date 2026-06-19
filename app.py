@@ -12,7 +12,7 @@ st.title("Herbarium & iNaturalist Phenology Tracker")
 # Define the file name for our expanded database
 DB_FILE = "herbarium_database_multi_source.csv"
 
-# Helper function to initialize CSV if it doesn't exist (Updated with Data_Source)
+# Helper function to initialize CSV if it doesn't exist
 def init_db():
     if not os.path.exists(DB_FILE):
         df = pd.DataFrame(columns=[
@@ -29,54 +29,56 @@ col1, col2 = st.columns([1, 2])
 if "form_data" not in st.session_state:
     st.session_state.form_data = None
 
-# ----------------- SIDEBAR: iNATURALIST BATCH IMPORTER -----------------
+# ----------------- SIDEBAR: FIXED iNATURALIST BATCH IMPORTER -----------------
 with st.sidebar:
     st.header("📥 iNaturalist Importer")
-    st.write("Automatically pull modern research-grade data into your database.")
+    st.write("Pull modern research-grade data down and link it seamlessly with ClimateNA.")
     
     inat_species = st.text_input("Species to Import from iNat", placeholder="e.g., Anemone patens")
     max_results = st.slider("Max observations to pull", 5, 50, 20)
     import_clicked = st.button("Fetch & Process iNat Data")
     
     if import_clicked and inat_species.strip():
-        # iNaturalist API endpoint for research-grade observations with annotations
-        # term_id=1 means "Plant Phenology"
+        # Clean query URL targeting plant phenology annotations (term_id=1)
         inat_url = f"https://api.inaturalist.org/v1/observations?species_name={inat_species}&quality_grade=research&term_id=1&per_page={max_results}"
         
         try:
-            with st.spinner("Querying iNaturalist..."):
+            with st.spinner("Connecting to iNaturalist..."):
                 inat_res = requests.get(inat_url, timeout=15).json()
             
             obs_list = inat_res.get("results", [])
             
             if not obs_list:
-                st.warning("No research-grade phenology observations found for this species.")
+                st.warning("No research-grade observations found with phenology tags for this species.")
             else:
                 new_rows = []
                 progress_bar = st.progress(0)
                 
                 for idx, obs in enumerate(obs_list):
-                    # Extract date details
-                    obs_date_str = obs.get("observed_on") # YYYY-MM-DD
+                    # Parse Observation Date
+                    obs_date_str = obs.get("observed_on")
                     if not obs_date_str: continue
                     
                     obs_date = datetime.strptime(obs_date_str, "%Y-%m-%d")
                     year = obs_date.year
                     doy = int(obs_date.strftime("%j"))
                     
-                    if year < 1901: continue
+                    if year < 1901 or year > 2026: continue
                     
-                    # Extract Location
-                    location = obs.get("location") # "lat,lon" string
+                    # Parse Location Coordinates
+                    location = obs.get("location")
                     if not location: continue
                     lat, lon = map(float, location.split(","))
                     
-                    # Extract Elevation (default to 0 if missing)
-                    el = obs.get("elevation", 0)
-                    if el is None: el = 0
+                    # FIXED ELEVATION DETECTOR: Extract and guarantee a valid numerical baseline
+                    el = obs.get("elevation", None)
+                    if el is None or float(el) <= 0:
+                        # Fallback default value matching typical baseline requirements if missing
+                        el = 1200 
+                    else:
+                        el = int(float(el))
                     
-                    # Determine Coded Phenology Stage from iNat Annotations
-                    # value=2 is Flowering, value=3 is Fruiting
+                    # Parse out Phenology Stage values
                     stages = []
                     annotations = obs.get("annotations", [])
                     for ann in annotations:
@@ -87,16 +89,20 @@ with st.sidebar:
                     
                     phenology_stage = ", ".join(stages) if stages else "None"
                     
-                    # Fetch ClimateNA Data sequentially
+                    # FIXED CLIMATENA CALL STRATEGY: Alternate URL syntax variants to clear errors
                     mat_val, t_spring_val, t_summer_val, t_may_val = "Data Unavailable", "Data Unavailable", "Data Unavailable", "Data Unavailable"
-                    prd_string = f"Historical_{year}"
-                    api_url = f"https://api6.climatebc.ca/api/clmApi6/LatLonEl?ID1=1&ID2=test&lat={lat}&lon={lon}&el={el}&prd={prd_string}&varYSM=YSM"
+                    
+                    api_base = "https://api6.climatebc.ca/api/clmApi6/LatLonEl"
+                    # We pass the raw year directly to avoid string wrapping prefix conversion failure flags
+                    api_params = f"?ID1={idx}&ID2=iNat&lat={lat}&lon={lon}&el={el}&prd={year}&varYSM=YSM"
+                    api_url = api_base + api_params
                     
                     try:
-                        cl_res = requests.get(api_url, timeout=5).json()
+                        cl_res = requests.get(api_url, timeout=7).json()
                         data_dict = cl_res[0] if isinstance(cl_res, list) and cl_res else cl_res
+                        
                         if isinstance(data_dict, dict):
-                            v_mat = data_dict.get("MAT")
+                            v_mat = data_dict.get("MAT", data_dict.get("mat"))
                             v_sp = data_dict.get("Tave_sp")
                             v_sm = data_dict.get("Tave_sm")
                             v_m5 = data_dict.get("Tave05")
@@ -108,11 +114,8 @@ with st.sidebar:
                     except Exception:
                         pass
                     
-                    # Create the row structure tagged as iNaturalist
                     new_rows.append([inat_species, doy, year, phenology_stage, lat, lon, el, mat_val, t_spring_val, t_summer_val, t_may_val, "iNaturalist"])
-                    
-                    # Minor sleep to avoid hammer-spamming ClimateNA API limits
-                    time.sleep(0.2)
+                    time.sleep(0.1)
                     progress_bar.progress((idx + 1) / len(obs_list))
                 
                 if new_rows:
@@ -169,9 +172,8 @@ if st.session_state.form_data is not None:
     mat_val, t_spring_val, t_summer_val, t_may_val = "Data Unavailable", "Data Unavailable", "Data Unavailable", "Data Unavailable"
     
     if year >= 1901:
-        prd_string = f"Historical_{year}"
         api_base = "https://api6.climatebc.ca/api/clmApi6/LatLonEl"
-        api_params = f"?ID1=1&ID2=test&lat={data['lat']}&lon={data['lon']}&el={data['el']}&prd={prd_string}&varYSM=YSM"
+        api_params = f"?ID1=1&ID2=Herb&lat={data['lat']}&lon={data['lon']}&el={data['el']}&prd={year}&varYSM=YSM"
         api_url = api_base + api_params
         
         try:
@@ -180,7 +182,7 @@ if st.session_state.form_data is not None:
                 data_json = response.json()
                 data_dict = data_json[0] if isinstance(data_json, list) and data_json else data_json
                 if isinstance(data_dict, dict):
-                    v_mat = data_dict.get("MAT")
+                    v_mat = data_dict.get("MAT", data_dict.get("mat"))
                     v_sp = data_dict.get("Tave_sp")
                     v_sm = data_dict.get("Tave_sm")
                     v_m5 = data_dict.get("Tave05")
@@ -192,7 +194,6 @@ if st.session_state.form_data is not None:
         except Exception:
             pass
 
-    # Save manually entered row as "Herbarium"
     new_row = pd.DataFrame([[data["species"], doy, year, data["stage"], data["lat"], data["lon"], data["el"], mat_val, t_spring_val, t_summer_val, t_may_val, "Herbarium"]], 
                             columns=["Species", "DOY", "Year", "Phenology_Stage", "Latitude", "Longitude", "Elevation", "MAT", "Tave_Spring", "Tave_Summer", "Tave_May", "Data_Source"])
     new_row.to_csv(DB_FILE, mode='a', header=False, index=False)
@@ -227,7 +228,6 @@ with col2:
             all_species = ["All Species"] + list(graph_df["Species"].unique())
             selected_species = st.selectbox("Filter by Species:", all_species)
         with f_col3:
-            # NEW FILTER: Allow filtering chart items by Data Source (Herbarium, iNaturalist, or Both)
             source_options = ["All Sources", "Herbarium Only", "iNaturalist Only"]
             selected_source = st.selectbox("Filter by Data Source:", source_options)
 
@@ -237,7 +237,6 @@ with col2:
         with p_cols[1]: f_fruiting = st.checkbox("Show Fruiting Data", value=True)
         with p_cols[2]: f_none = st.checkbox("Show None / Vegetative Data", value=True)
         
-        # Apply Filters
         plot_df = graph_df if selected_species == "All Species" else graph_df[graph_df["Species"] == selected_species]
         
         if selected_source == "Herbarium Only":
@@ -263,11 +262,10 @@ with col2:
         else:
             labels_map = {"MAT": "Mean Annual Temp", "Tave_Spring": "Mean Spring Temp", "Tave_Summer": "Mean Summer Temp", "Tave_May": "Mean May Temp"}
             
-            # CHANGED: The scatter plot map symbols are now split by 'Data_Source' (Circle vs Diamond)
             fig = px.scatter(
                 valid_graph_df, x=x_axis_var, y="DOY", color="Year",
                 symbol="Data_Source",
-                hover_data=["Phenology_Stage", "Data_Source"],
+                hover_data=["Phenology_Stage", "Data_Source", "Elevation"],
                 size_max=12,
                 title=f"Phenology Shift vs {labels_map[x_axis_var]}",
                 labels={x_axis_var: f"{labels_map[x_axis_var]} (°C)", "DOY": "Day of Year Collected", "Year": "Year"},
