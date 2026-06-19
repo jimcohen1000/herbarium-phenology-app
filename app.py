@@ -9,10 +9,8 @@ import time
 st.set_page_config(layout="wide")
 st.title("Herbarium & iNaturalist Phenology Tracker")
 
-# Define the file name for our expanded database
 DB_FILE = "herbarium_database_multi_source.csv"
 
-# Helper function to initialize CSV if it doesn't exist
 def init_db():
     if not os.path.exists(DB_FILE):
         df = pd.DataFrame(columns=[
@@ -23,7 +21,6 @@ def init_db():
 
 init_db()
 
-# Create two columns layout: Left for Form, Right for Visualizations
 col1, col2 = st.columns([1, 2])
 
 if "form_data" not in st.session_state:
@@ -31,7 +28,6 @@ if "form_data" not in st.session_state:
 if "last_raw_response" not in st.session_state:
     st.session_state.last_raw_response = None
 
-# SMART PARSER: Matches document specs (handles case variants safely)
 def extract_climate_var(data_dict, keys_to_try):
     if not isinstance(data_dict, dict):
         return None
@@ -109,10 +105,4 @@ with st.sidebar:
                     t_summer_val = "Data Unavailable"
                     t_may_val = "Data Unavailable"
                     
-                    api_url = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1={idx}&ID2=test1&lat={lat}&lon={lon}&el={el}&prd=%20{year}&varYSM=YSM"
-                    
-                    try:
-                        cl_res = requests.get(api_url, timeout=7).json()
-                        st.session_state.last_raw_response = cl_res
-                        
-                        #
+                    api_url = f"
