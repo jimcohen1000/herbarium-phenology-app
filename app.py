@@ -106,7 +106,6 @@ with st.sidebar:
                     
                     mat_val, t_spring_val, t_summer_val, t_may_val = "Data Unavailable", "Data Unavailable", "Data Unavailable", "Data Unavailable"
                     
-                    # FIXED PARAMETER SCHEMA: Switched to explicit 'Year_XXXX' format per API specifications
                     api_url = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1={idx}&ID2=test1&lat={lat}&lon={lon}&el={el}&prd=Year_{query_year}&varYSM=YSM"
                     
                     cl_res = None
@@ -132,4 +131,4 @@ with st.sidebar:
                     if v_sm is not None: t_summer_val = v_sm
                     if v_m5 is not None: t_may_val = v_m5
                     
-                    new_rows.append(
+                    # FIXED LINE 135: Flattened tracking array elements
