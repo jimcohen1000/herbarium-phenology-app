@@ -75,7 +75,6 @@ with st.sidebar:
                 progress_bar = st.progress(0)
                 total_items = len(obs_list)
                 
-                # FIXED BLOCK: Explicit layout alignment for processing tracking parameters
                 for idx in range(total_items):
                     obs = obs_list[idx]
                     obs_date_str = obs.get("observed_on")
@@ -126,6 +125,28 @@ with st.sidebar:
                     elif isinstance(cl_res, dict):
                         data_dict = cl_res
                     
-                    v_mat = extract_climate_var(data_dict, "MAT")
-                    v_sp = extract_climate_var(data_dict, "Tave_sp")
-                    v_sm = extract_climate_var(data_dict, "Tave
+                    # FIXED LINE 131: Extracted directly via dedicated clean string variables
+                    k1 = "MAT"
+                    k2 = "Tave_sp"
+                    k3 = "Tave_sm"
+                    k4 = "Tave_05"
+                    
+                    v_mat = extract_climate_var(data_dict, k1)
+                    v_sp = extract_climate_var(data_dict, k2)
+                    v_sm = extract_climate_var(data_dict, k3)
+                    v_m5 = extract_climate_var(data_dict, k4)
+                    
+                    if v_mat is not None: mat_val = v_mat
+                    if v_sp is not None: t_spring_val = v_sp
+                    if v_sm is not None: t_summer_val = v_sm
+                    if v_m5 is not None: t_may_val = v_m5
+                    
+                    row_entry = [inat_species, doy, year, phenology_stage, lat, lon, el, mat_val, t_spring_val, t_summer_val, t_may_val, "iNaturalist"]
+                    new_rows.append(row_entry)
+                    
+                    time.sleep(0.05)
+                    progress_bar.progress((idx + 1) / total_items)
+                
+                if new_rows:
+                    inat_df = pd.DataFrame(new_rows, columns=headers)
+                    inat
