@@ -76,4 +76,21 @@ with st.sidebar:
                 
                 for idx in range(total_items):
                     obs = obs_list[idx]
-                    obs_
+                    obs_date_str = obs.get("observed_on")
+                    if not obs_date_str: continue
+                    
+                    obs_date = datetime.strptime(obs_date_str, "%Y-%m-%d")
+                    year = obs_date.year
+                    doy = int(obs_date.strftime("%j"))
+                    
+                    if year < 1901: continue
+                    
+                    query_year = year
+                    if query_year > 2024:
+                        query_year = 2024
+                    
+                    location = obs.get("location")
+                    if not location: continue
+                    lat, lon = map(float, location.split(","))
+                    
+                    el = obs.get("elevation", None)
