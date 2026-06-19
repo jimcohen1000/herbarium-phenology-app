@@ -75,28 +75,4 @@ with c1:
     if st.button("Save Entry"):
         q_yr = 2024 if yr > 2024 else (1901 if yr < 1901 else yr)
         url_year = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=t1&lat={lat}&lon={lon}&el={el}&prd=Year_{q_yr}.ann&varYSM=YSM"
-        url_norm = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=t2&lat={lat}&lon={lon}&el={el}&prd=Normal_1961_1990&varYSM=YSM"
-        
-        def parse_payload(url):
-            out = {"MAT": "Data Unavailable", "Tave_wt": "Data Unavailable", "Tave_sp": "Data Unavailable", "Tave_sm": "Data Unavailable", "Tave_05": "Data Unavailable"}
-            try:
-                res = requests.get(url, timeout=10)
-                if res.status_code == 200:
-                    data = res.json()
-                    data_dict = data[0] if isinstance(data, list) else data
-                    clean_dict = {str(k).upper().strip(): v for k, v in data_dict.items()}
-                    for key in out.keys():
-                        target = key.upper()
-                        if target in clean_dict and float(clean_dict[target]) != -9999.0:
-                            out[key] = float(clean_dict[target])
-            except Exception:
-                pass
-            return out
-
-        year_metrics = parse_payload(url_year)
-        norm_metrics = parse_payload(url_norm)
-        st.session_state.last_raw_response = {"Year_Data": year_metrics, "Normal_Data": norm_metrics}
-            
-        row = pd.DataFrame([[
-            spp, doy, yr, lat, lon, el, is_flowering, is_fruiting, is_vegetative,
-            year_metrics["MAT"], year_metrics
+        url_norm = f"
