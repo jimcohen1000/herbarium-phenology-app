@@ -52,10 +52,14 @@ with st.sidebar:
     if import_clicked and inat_species.strip():
         inat_url = f"https://api.inaturalist.org/v1/observations?species_name={inat_species}&quality_grade=research&term_id=1&per_page={max_results}"
         
+        inat_res = None
         try:
             with st.spinner("Connecting to iNaturalist..."):
                 inat_res = requests.get(inat_url, timeout=15).json()
+        except Exception as e:
+            st.error(f"Failed to connect to iNaturalist: {str(e)}")
             
+        if inat_res is not None:
             obs_list = inat_res.get("results", [])
             
             if not obs_list:
@@ -87,4 +91,21 @@ with st.sidebar:
                     el = obs.get("elevation", None)
                     el = int(float(el)) if (el is not None and float(el) > 0) else 1200
                     
-                    # FIXED LINE 96: Flattened into quick, independent evaluation
+                    stages = []
+                    annotations = obs.get("annotations", [])
+                    for ann in annotations:
+                        if ann.get("controlled_term_id") == 1:
+                            val = ann.get("controlled_value_id")
+                            if val == 2:
+                                stages.append("Flowering")
+                            if val == 3:
+                                stages.append("Fruiting")
+                    
+                    phenology_stage = ", ".join(stages) if stages else "None"
+                    
+                    mat_val = "Data Unavailable"
+                    t_spring_val = "Data Unavailable"
+                    t_summer_val = "Data Unavailable"
+                    t_may_val = "Data Unavailable"
+                    
+                    api_url = f"https://api.climatena.
