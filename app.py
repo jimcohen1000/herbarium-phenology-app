@@ -84,12 +84,4 @@ with c1:
     
     lat = st.number_input("Latitude", format="%.5f", value=51.17641)
     lon = st.number_input("Longitude", format="%.5f", value=-115.56820)
-    el = st.number_input("Elevation (meters)", min_value=0, value=1420)
-    
-    btn = st.button("Save & Link Climate Data")
-    
-    if btn:
-        q_yr = 2024 if yr > 2024 else (1901 if yr < 1901 else yr)
-        
-        url_year = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=t1&lat={lat}&lon={lon}&el={el}&prd=Year_{q_yr}.ann&varYSM=YSM"
-        url_norm = f"
+    el = st.number_input("Elevation (
