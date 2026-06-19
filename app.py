@@ -62,21 +62,21 @@ with col1:
             year = collection_date.year
             doy = int(collection_date.strftime("%j")) 
             
-            # ClimateNA API Call endpoint (Added standard dummy ID parameters required by some versions of the API)
+            # Formatted ClimateNA API Endpoint string
             api_url = f"https://api6.climatebc.ca/api/clmApi6/LatLonEl?ID1=1&ID2=test&lat={lat}&lon={lon}&el={el}&prd={year}&varYSM=Y"
             
             try:
                 with st.spinner("Fetching climate data from ClimateNA..."):
                     response = requests.get(api_url, timeout=10).json()
                 
-                # Unpack response
+                # Extract dictionary payload from API list container safely
                 data_dict = {}
                 if isinstance(response, list) and len(response) > 0:
                     data_dict = response[0]
                 elif isinstance(response, dict):
                     data_dict = response
                 
-                # Check for either 'MAT' or lowercase 'mat'
+                # Check for MAT keys from ClimateNA response keys
                 mat = data_dict.get("MAT", data_dict.get("mat", None))
                 
                 if mat is not None:
@@ -86,16 +86,14 @@ with col1:
                                             columns=["Species", "DOY", "Year", "Phenology_Stage", "Latitude", "Longitude", "Elevation", "MAT"])
                     new_data.to_csv(DB_FILE, mode='a', header=False, index=False)
                     st.success(f"Added {species} ({phenology_stage})! Calculated DOY: {doy}. MAT: {mat_float}°C.")
+                    st.rerun() # Refresh the page to render the new valid row immediately
                 else:
-                    st.error("ClimateNA connected, but 'MAT' was missing.")
-                    # DEBUG WINDOW: This shows us exactly what the API answered
-                    st.warning("Diagnostic Mode — Raw API Response:")
+                    st.error("ClimateNA connected, but 'MAT' was missing from this region.")
+                    st.warning("Raw Server Return Summary:")
                     st.write(response)
                     
             except Exception as e:
                 st.error(f"Error processing data: {str(e)}.")
-                if 'response' in locals():
-                    st.write("Raw Response Context:", response)
 
 # 3. Interactive Graphing & Data Viewer (Right Column)
 with col2:
@@ -103,17 +101,29 @@ with col2:
     
     df = pd.read_csv(DB_FILE)
     
-    if df.empty:
-        st.info("The database is currently empty. Submit your first herbarium entry on the left to generate graphs!")
+    # SAFETY CLEAN: Clear out rows containing bad, empty data types that break Plotly
+    df["MAT"] = pd.to_numeric(df["MAT"], errors='coerce')
+    df["DOY"] = pd.to_numeric(df["DOY"], errors='coerce')
+    df["Year"] = pd.to_numeric(df["Year"], errors='coerce')
+    clean_df = df.dropna(subset=["MAT", "DOY", "Year"])
+    
+    # Also provide an option to reset/wipe the local test database clean
+    if not clean_df.empty:
+        if st.sidebar.button("⚠️ Reset Database (Clear Rows)"):
+            if os.path.exists(DB_FILE):
+                os.remove(DB_FILE)
+            init_db()
+            st.rerun()
+
+    if clean_df.empty:
+        st.info("The database is currently empty. Submit your first valid herbarium entry on the left to generate graphs!")
     else:
-        all_species = ["All Species"] + list(df["Species"].unique())
+        all_species = ["All Species"] + list(clean_df["Species"].unique())
         selected_species = st.selectbox("Filter Graph by Species:", all_species)
         
-        plot_df = df if selected_species == "All Species" else df[df["Species"] == selected_species]
+        plot_df = clean_df if selected_species == "All Species" else clean_df[clean_df["Species"] == selected_species]
         
-        plot_df["MAT"] = pd.to_numeric(plot_df["MAT"], errors='coerce')
-        plot_df["DOY"] = pd.to_numeric(plot_df["DOY"], errors='coerce')
-        
+        # Plotly Scatter Plot
         fig = px.scatter(
             plot_df, 
             x="MAT", 
