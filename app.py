@@ -35,7 +35,11 @@ with col1:
             max_value=date(2050, 12, 31)
         )
         
-        phenology_stage = st.selectbox("Phenology Stage", ["Flowering", "Fruiting", "None"])
+        # CHANGED: Replaced Dropdown menu with Checkboxes for multiple selections
+        st.write("Phenology Stage (Select all that apply):")
+        c_flowering = st.checkbox("Flowering")
+        c_fruiting = st.checkbox("Fruiting")
+        c_none = st.checkbox("None / Vegetative Only")
         
         lat = st.number_input("Latitude", format="%.5f", value=51.17641)
         lon = st.number_input("Longitude", format="%.5f", value=-115.56820)
@@ -44,8 +48,19 @@ with col1:
         submitted = st.form_submit_button("Grab ClimateNA Data & Plot")
 
     if submitted:
+        # Process the checkboxes into a single clean string
+        stages = []
+        if c_flowering: stages.append("Flowering")
+        if c_fruiting: stages.append("Fruiting")
+        if c_none: stages.append("None")
+        
+        phenology_stage = ", ".join(stages) if stages else "Unspecified"
+
         if not species.strip():
             st.error("Please enter a plant species name.")
+        elif collection_date.year < 1901:
+            # Informative error check for ClimateNA historical limits
+            st.error(f"ClimateNA does not contain historical data for the year {collection_date.year}. Please select a date from 1901 onward.")
         else:
             year = collection_date.year
             doy = int(collection_date.strftime("%j")) 
@@ -54,7 +69,7 @@ with col1:
             api_url = f"https://api6.climatebc.ca/api/clmApi6/LatLonEl?lat={lat}&lon={lon}&el={el}&prd={year}&varYSM=Y"
             
             try:
-                with st.spinner("Fetching climate data..."):
+                with st.spinner("Fetching climate data from ClimateNA..."):
                     response = requests.get(api_url, timeout=10).json()
                     
                 mat = response.get("MAT", None)
@@ -65,9 +80,10 @@ with col1:
                     new_data.to_csv(DB_FILE, mode='a', header=False, index=False)
                     st.success(f"Added {species} ({phenology_stage})! Calculated DOY: {doy}. MAT: {mat}°C.")
                 else:
-                    st.error("ClimateNA data fetched, but 'MAT' was missing.")
+                    # Improved guidance for the 'MAT' error
+                    st.error("ClimateNA connected, but 'MAT' was missing. Note: ClimateNA only supports locations within North America and years from 1901-present.")
             except Exception as e:
-                st.error("Failed to connect to ClimateNA. Please check your coordinates.")
+                st.error("Failed to connect to ClimateNA. Please check your internet connection or coordinates.")
 
 # 3. Interactive Graphing & Data Viewer (Right Column)
 with col2:
@@ -76,27 +92,4 @@ with col2:
     df = pd.read_csv(DB_FILE)
     
     if df.empty:
-        st.info("The database is currently empty. Submit your first herbarium entry on the left to generate graphs!")
-    else:
-        all_species = ["All Species"] + list(df["Species"].unique())
-        selected_species = st.selectbox("Filter Graph by Species:", all_species)
-        
-        plot_df = df if selected_species == "All Species" else df[df["Species"] == selected_species]
-        
-        # Plotly Scatter Plot configuration
-        fig = px.scatter(
-            plot_df, 
-            x="MAT", 
-            y="DOY", 
-            color="Year",
-            hover_data=["Phenology_Stage"],
-            size_max=12,
-            title=f"Phenology Shift: Day of Year vs. Mean Annual Temperature ({selected_species})",
-            labels={"MAT": "Mean Annual Temp (°C)", "DOY": "Day of Year Collected", "Year": "Collection Year"},
-            color_continuous_scale=px.colors.sequential.Plasma
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        st.subheader("Live Enriched Database")
-        st.dataframe(df, use_container_width=True)
+        st.info("The database is currently empty
