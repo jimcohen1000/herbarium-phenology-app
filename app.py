@@ -72,16 +72,3 @@ with c1:
     spp = st.text_input("Species Name", "Anemone patens")
     
     chosen_date = st.date_input("Collection Date", value=date(2020, 5, 1))
-    yr = chosen_date.year
-    doy = int(chosen_date.strftime("%j"))
-    
-    st.info(f"📅 DOY: **{doy}** | Year: **{yr}**")
-    
-    st.write("**Phenology Status (Select all that apply):**")
-    is_flowering = st.checkbox("Flowering", value=True)
-    is_fruiting = st.checkbox("Fruiting", value=False)
-    is_vegetative = st.checkbox("None (Vegetative Only)", value=False)
-    
-    lat = st.number_input("Latitude", format="%.5f", value=51.17641)
-    lon = st.number_input("Longitude", format="%.5f", value=-115.56820)
-    el = st.number_input("Elevation (
