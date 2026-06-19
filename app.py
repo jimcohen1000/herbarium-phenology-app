@@ -73,36 +73,4 @@ with st.sidebar:
                 new_rows = []
                 progress_bar = st.progress(0)
                 
-                for idx, obs in enumerate(obs_list):
-                    obs_date_str = obs.get("observed_on")
-                    if not obs_date_str: continue
-                    
-                    obs_date = datetime.strptime(obs_date_str, "%Y-%m-%d")
-                    year = obs_date.year
-                    doy = int(obs_date.strftime("%j"))
-                    
-                    if year < 1901 or year > 2026: continue
-                    
-                    location = obs.get("location")
-                    if not location: continue
-                    lat, lon = map(float, location.split(","))
-                    
-                    el = obs.get("elevation", None)
-                    el = int(float(el)) if (el is not None and float(el) > 0) else 1200
-                    
-                    stages = []
-                    annotations = obs.get("annotations", [])
-                    for ann in annotations:
-                        if ann.get("controlled_term_id") == 1:
-                            val = ann.get("controlled_value_id")
-                            if val == 2: stages.append("Flowering")
-                            if val == 3: stages.append("Fruiting")
-                    
-                    phenology_stage = ", ".join(stages) if stages else "None"
-                    
-                    mat_val = "Data Unavailable"
-                    t_spring_val = "Data Unavailable"
-                    t_summer_val = "Data Unavailable"
-                    t_may_val = "Data Unavailable"
-                    
-                    base_url = "
+                for idx, obs in enumerate
