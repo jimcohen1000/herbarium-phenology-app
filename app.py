@@ -3,7 +3,7 @@ import requests
 import pandas as pd
 import plotly.express as px
 import os
-from datetime import datetime
+from datetime import datetime, date
 
 st.set_page_config(layout="wide")
 st.title("Herbarium Phenology & Climate Change Tracker")
@@ -14,7 +14,6 @@ DB_FILE = "herbarium_database.csv"
 # Helper function to initialize CSV if it doesn't exist
 def init_db():
     if not os.path.exists(DB_FILE):
-        # ADDED: "Phenology_Stage" to the database columns
         df = pd.DataFrame(columns=["Species", "DOY", "Year", "Phenology_Stage", "Latitude", "Longitude", "Elevation", "MAT"])
         df.to_csv(DB_FILE, index=False)
 
@@ -29,9 +28,14 @@ with col1:
     with st.form("herbarium_form"):
         species = st.text_input("Plant Species", placeholder="e.g., Anemone patens")
         
-        collection_date = st.date_input("Collection Date", value=datetime(2000, 5, 1))
+        # CHANGED: Added min_value (1850) and max_value (2050) constraints to the date picker
+        collection_date = st.date_input(
+            "Collection Date", 
+            value=date(2000, 5, 1),
+            min_value=date(1850, 1, 1),
+            max_value=date(2050, 12, 31)
+        )
         
-        # ADDED: Dropdown menu for Phenology Stage
         phenology_stage = st.selectbox("Phenology Stage", ["Flowering", "Fruiting", "None"])
         
         lat = st.number_input("Latitude", format="%.5f", value=51.17641)
@@ -57,7 +61,6 @@ with col1:
                 mat = response.get("MAT", None)
                 
                 if mat is not None:
-                    # ADDED: Included phenology_stage in the saved row data
                     new_data = pd.DataFrame([[species, doy, year, phenology_stage, lat, lon, el, mat]], 
                                             columns=["Species", "DOY", "Year", "Phenology_Stage", "Latitude", "Longitude", "Elevation", "MAT"])
                     new_data.to_csv(DB_FILE, mode='a', header=False, index=False)
@@ -83,18 +86,4 @@ with col2:
         
         fig = px.scatter(
             plot_df, 
-            x="MAT", 
-            y="DOY", 
-            color="Year",
-            # ADDED: Hover data so students can see the Phenology Stage when hovering over dots
-            hover_data=["Phenology_Stage"],
-            size_max=12,
-            title=f"Phenology Shift: Day of Year vs. Mean Annual Temperature ({selected_species})",
-            labels={"MAT": "Mean Annual Temp (°C)", "DOY": "Day of Year Collected", "Year": "Collection Year"},
-            color_continuous_scale=px.colors.sequential.Plasma
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        st.subheader("Live Enriched Database")
-        st.dataframe(df, use_container_width=True)
+            x="MAT",
