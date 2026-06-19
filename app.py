@@ -86,24 +86,85 @@ with c1:
     if btn:
         q_yr = 2024 if yr > 2024 else (1901 if yr < 1901 else yr)
         
-        # Build endpoints for both Target Year and Baseline Normal profiles
-        url_year = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=t1&lat={lat}&lon={lon}&el={el}&prd=Year_{q_yr}.ann&varYSM=YSM"
-        url_norm = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=t2&lat={lat}&lon={lon}&el={el}&prd=%20Normal_1961_1990.nrm&varYSM=YSM"
+        # FIXED: Removed trailing extensions to map directly to server expectations
+        url_year = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=t1&lat={lat}&lon={lon}&el={el}&prd=Year_{q_yr}&varYSM=YSM"
+        url_norm = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=t2&lat={lat}&lon={lon}&el={el}&prd=Normal_1961_1990&varYSM=YSM"
         
         mat_year = "Data Unavailable"
         mat_norm = "Data Unavailable"
         diagnostic_log = {}
 
-        # Call 1: Specific Target Year
+        # CALL 1 SATELLITE: Completely isolated historical target loop
         try:
             res_yr = requests.get(url_year, timeout=10)
             if res_yr.status_code == 200:
                 data_yr = res_yr.json()
-                diagnostic_log["Year_API_Response"] = data_yr
+                diagnostic_log["Year_API_Raw"] = data_yr
                 dict_yr = data_yr[0] if isinstance(data_yr, list) else data_yr
                 if "MAT" in dict_yr and float(dict_yr["MAT"]) != -9999.0:
                     mat_year = float(dict_yr["MAT"])
             else:
-                diagnostic_log["Year_API_Error"] = f"Code {res_yr.status_code}"
+                diagnostic_log["Year_API_Error"] = f"HTTP {res_yr.status_code}"
         except Exception as e:
-            diagnostic_
+            diagnostic_log["Year_API_Exception"] = str(e)
+
+        # CALL 2 SATELLITE: Completely isolated reference normal baseline loop
+        try:
+            res_nm = requests.get(url_norm, timeout=10)
+            if res_nm.status_code == 200:
+                data_nm = res_nm.json()
+                diagnostic_log["Normal_API_Raw"] = data_nm
+                dict_nm = data_nm[0] if isinstance(data_nm, list) else data_nm
+                if "MAT" in dict_nm and float(dict_nm["MAT"]) != -9999.0:
+                    mat_norm = float(dict_nm["MAT"])
+            else:
+                diagnostic_log["Normal_API_Error"] = f"HTTP {res_nm.status_code}"
+        except Exception as e:
+            diagnostic_log["Normal_API_Exception"] = str(e)
+            
+        st.session_state.last_raw_response = diagnostic_log
+            
+        # Compile row with dual temperature indicators
+        row = pd.DataFrame([[
+            spp, doy, yr, lat, lon, el,
+            is_flowering, is_fruiting, is_vegetative,
+            mat_year, mat_norm, "Herbarium"
+        ]], columns=headers)
+        
+        row.to_csv(db_file, mode='a', header=False, index=False)
+        st.success("Retrieval processing complete!")
+        st.rerun()
+
+with c2:
+    st.subheader("Diagnostics & Visualizations")
+    
+    if st.session_state.last_raw_response is not None:
+        with st.expander("🔍 Live ClimateNA Diagnostic Console", expanded=True):
+            st.json(st.session_state.last_raw_response)
+        
+    try:
+        df = pd.read_csv(db_file)
+    except Exception:
+        df = pd.DataFrame(columns=headers)
+        
+    if df.empty:
+        st.info("No records found yet.")
+    else:
+        st.write("**Current Ledger View:**")
+        st.dataframe(df, use_container_width=True)
+        
+        # Prepare numbers safely for trends chart
+        plot_df = df.copy()
+        plot_df["MAT_Year"] = pd.to_numeric(plot_df["MAT_Year"], errors='coerce')
+        plot_df = plot_df.dropna(subset=["MAT_Year"])
+        
+        if not plot_df.empty:
+            fig = px.scatter(
+                plot_df, 
+                x="MAT_Year", 
+                y="DOY", 
+                color="Year",
+                hover_data=["MAT_Normal", "Flowering", "Fruiting", "Vegetative"],
+                title="Phenology Trends vs Collection Year Temperature"
+            )
+            st.plotly_chart(fig, use_container_width=True)
