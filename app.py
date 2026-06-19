@@ -51,16 +51,26 @@ with c1:
     if st.button("Save Entry"):
         q_yr = 2024 if yr > 2024 else (1901 if yr < 1901 else yr)
         base = "https://api.climatena.ca/api/cnaApi6/LatLonEl"
-        # Safe URL construction
         u_yr = base + f"?ID1=1&ID2=t1&lat={lat}&lon={lon}&el={el}&prd=Year_{q_yr}.ann&varYSM=YSM"
         u_nm = base + f"?ID1=1&ID2=t2&lat={lat}&lon={lon}&el={el}&prd=Normal_1961_1990&varYSM=YSM"
         
         def get_data(u):
-            res = requests.get(u, timeout=10)
-            if res.status_code == 200:
-                data = res.json()
-                d = data[0] if isinstance(data, list) else data
-                return {k.upper(): float(v) for k, v in d.items() if float(v) != -9999.0}
+            try:
+                res = requests.get(u, timeout=10)
+                if res.status_code == 200:
+                    data = res.json()
+                    d = data[0] if isinstance(data, list) else data
+                    # SAFELY parse numbers, ignoring invalid/non-numeric strings
+                    out = {}
+                    for k, v in d.items():
+                        try:
+                            val = float(v)
+                            out[k.upper()] = val if val != -9999.0 else None
+                        except (ValueError, TypeError):
+                            out[k.upper()] = None
+                    return out
+            except Exception:
+                pass
             return {}
 
         y_m = get_data(u_yr)
@@ -81,6 +91,8 @@ with c2:
     df = pd.read_csv(db_file)
     if not df.empty:
         var = st.selectbox("X-Axis", [c for c in headers if "MAT" in c or "Tave" in c])
-        fig = px.scatter(df, x=var, y="DOY", color="Year", trendline="ols")
+        # Force numeric conversion for plotting
+        df[var] = pd.to_numeric(df[var], errors='coerce')
+        fig = px.scatter(df.dropna(subset=[var, "DOY"]), x=var, y="DOY", color="Year", trendline="ols")
         st.plotly_chart(fig, use_container_width=True)
         st.dataframe(df)
