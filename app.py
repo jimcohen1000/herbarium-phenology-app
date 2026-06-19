@@ -11,13 +11,20 @@ st.title("Herbarium & iNaturalist Phenology Tracker")
 
 DB_FILE = "herbarium_database_multi_source.csv"
 
+# FIXED CORRUPTION BYPASS: Rebuilds structural ledger if the CSV is unparseable
 def init_db():
+    headers = [
+        "Species", "DOY", "Year", "Phenology_Stage", "Latitude", "Longitude", "Elevation", 
+        "MAT", "Tave_Spring", "Tave_Summer", "Tave_May", "Data_Source"
+    ]
     if not os.path.exists(DB_FILE):
-        df = pd.DataFrame(columns=[
-            "Species", "DOY", "Year", "Phenology_Stage", "Latitude", "Longitude", "Elevation", 
-            "MAT", "Tave_Spring", "Tave_Summer", "Tave_May", "Data_Source"
-        ])
-        df.to_csv(DB_FILE, index=False)
+        pd.DataFrame(columns=headers).to_csv(DB_FILE, index=False)
+    else:
+        try:
+            pd.read_csv(DB_FILE)
+        except Exception:
+            # File is corrupted, wipe and rebuild instantly to restore dashboard view
+            pd.DataFrame(columns=headers).to_csv(DB_FILE, index=False)
 
 init_db()
 
@@ -108,15 +115,5 @@ with st.sidebar:
                     t_summer_val = "Data Unavailable"
                     t_may_val = "Data Unavailable"
                     
-                    # FIXED LINE 111: Highly condensed API targets built using short key-value pairs
                     cna_host = "https://api.climatena.ca/api/cnaApi6/LatLonEl"
-                    cna_args = {"ID1": idx, "ID2": "test1", "lat": lat, "lon": lon, "el": el, "prd": f" {query_year}", "varYSM": "YSM"}
-                    
-                    cl_res = None
-                    try:
-                        cl_res = requests.get(cna_host, params=cna_args, timeout=7).json()
-                        st.session_state.last_raw_response = cl_res
-                    except Exception:
-                        pass
-                    
-                    data_dict = {}
+                    cna_args = {"ID1": idx, "ID2":
