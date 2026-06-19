@@ -108,4 +108,15 @@ with st.sidebar:
                     t_summer_val = "Data Unavailable"
                     t_may_val = "Data Unavailable"
                     
-                    api_url = f"https://api.climatena.
+                    # FIXED LINE 111: Highly condensed API targets built using short key-value pairs
+                    cna_host = "https://api.climatena.ca/api/cnaApi6/LatLonEl"
+                    cna_args = {"ID1": idx, "ID2": "test1", "lat": lat, "lon": lon, "el": el, "prd": f" {query_year}", "varYSM": "YSM"}
+                    
+                    cl_res = None
+                    try:
+                        cl_res = requests.get(cna_host, params=cna_args, timeout=7).json()
+                        st.session_state.last_raw_response = cl_res
+                    except Exception:
+                        pass
+                    
+                    data_dict = {}
