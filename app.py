@@ -28,25 +28,17 @@ if "form_data" not in st.session_state:
 if "last_raw_response" not in st.session_state:
     st.session_state.last_raw_response = None
 
-def extract_climate_var(data_dict, keys_to_try):
+# CLEAN EXTRACTOR: Hardened to match the case-sensitive JSON payload fields perfectly
+def extract_climate_var(data_dict, key):
     if not isinstance(data_dict, dict):
         return None
-    for key in keys_to_try:
-        if key in data_dict:
-            val = data_dict[key]
-            try:
-                if val is not None and float(val) != -9999.0:
-                    return float(val)
-            except ValueError:
-                pass
-        lower_dict = {k.lower(): v for k, v in data_dict.items()}
-        if key.lower() in lower_dict:
-            val = lower_dict[key.lower()]
-            try:
-                if val is not None and float(val) != -9999.0:
-                    return float(val)
-            except ValueError:
-                pass
+    if key in data_dict:
+        val = data_dict[key]
+        try:
+            if val is not None and float(val) != -9999.0:
+                return float(val)
+        except ValueError:
+            pass
     return None
 
 # ----------------- SIDEBAR: iNATURALIST BATCH IMPORTER -----------------
@@ -72,12 +64,10 @@ with st.sidebar:
             else:
                 new_rows = []
                 progress_bar = st.progress(0)
-                
-                # FIXED LINE 76: Rewritten into a split configuration to avoid line end truncation cuts
                 total_items = len(obs_list)
+                
                 for idx in range(total_items):
                     obs = obs_list[idx]
-                    
                     obs_date_str = obs.get("observed_on")
                     if not obs_date_str: continue
                     
@@ -85,7 +75,12 @@ with st.sidebar:
                     year = obs_date.year
                     doy = int(obs_date.strftime("%j"))
                     
-                    if year < 1901 or year > 2026: continue
+                    if year < 1901: continue
+                    
+                    # FIXED: Dynamic capping for future timeline queries to prevent -9999
+                    query_year = year
+                    if query_year > 2024:
+                        query_year = 2024
                     
                     location = obs.get("location")
                     if not location: continue
@@ -109,7 +104,7 @@ with st.sidebar:
                     t_summer_val = "Data Unavailable"
                     t_may_val = "Data Unavailable"
                     
-                    api_url = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1={idx}&ID2=test1&lat={lat}&lon={lon}&el={el}&prd=%20{year}&varYSM=YSM"
+                    api_url = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1={idx}&ID2=test1&lat={lat}&lon={lon}&el={el}&prd=%20{query_year}&varYSM=YSM"
                     
                     cl_res = None
                     try:
@@ -119,26 +114,20 @@ with st.sidebar:
                         pass
                     
                     data_dict = {}
-                    res_type = type(cl_res).__name__
-                    
-                    if res_type == "list" and cl_res:
+                    if isinstance(cl_res, list) and cl_res:
                         data_dict = cl_res[0]
-                    elif res_type == "dict":
+                    elif isinstance(cl_res, dict):
                         data_dict = cl_res
                     
-                    v_mat = extract_climate_var(data_dict, ["MAT"])
-                    v_sp = extract_climate_var(data_dict, ["Tave_sp"])
-                    v_sm = extract_climate_var(data_dict, ["Tave_sm"])
-                    v_m5 = extract_climate_var(data_dict, ["Tave05"])
+                    v_mat = extract_climate_var(data_dict, "MAT")
+                    v_sp = extract_climate_var(data_dict, "Tave_sp")
+                    v_sm = extract_climate_var(data_dict, "Tave_sm")
+                    v_m5 = extract_climate_var(data_dict, "Tave_05")
                     
-                    if v_mat is not None:
-                        mat_val = v_mat
-                    if v_sp is not None:
-                        t_spring_val = v_sp
-                    if v_sm is not None:
-                        t_summer_val = v_sm
-                    if v_m5 is not None:
-                        t_may_val = v_m5
+                    if v_mat is not None: mat_val = v_mat
+                    if v_sp is not None: t_spring_val = v_sp
+                    if v_sm is not None: t_summer_val = v_sm
+                    if v_m5 is not None: t_may_val = v_m5
                     
                     new_rows.append([inat_species, doy, year, phenology_stage, lat, lon, el, mat_val, t_spring_val, t_summer_val, t_may_val, "iNaturalist"])
                     time.sleep(0.1)
@@ -201,7 +190,12 @@ if st.session_state.form_data is not None:
     t_may_val = "Data Unavailable"
     
     if year >= 1901:
-        api_url = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=test1&lat={data['lat']}&lon={data['lon']}&el={data['el']}&prd=%20{year}&varYSM=YSM"
+        # FIXED: Dynamic year safety fallback for manual entries above data limits
+        query_year = year
+        if query_year > 2024:
+            query_year = 2024
+            
+        api_url = f"https://api.climatena.ca/api/cnaApi6/LatLonEl?ID1=1&ID2=test1&lat={data['lat']}&lon={data['lon']}&el={data['el']}&prd=%20{query_year}&varYSM=YSM"
         
         response = None
         try:
@@ -214,26 +208,20 @@ if st.session_state.form_data is not None:
             st.session_state.last_raw_response = data_json
             
             data_dict = {}
-            json_type = type(data_json).__name__
-            if json_type == "list" and data_json:
+            if isinstance(data_json, list) and data_json:
                 data_dict = data_json[0]
-            elif json_type == "dict":
+            elif isinstance(data_json, dict):
                 data_dict = data_json
             
-            if isinstance(data_dict, dict):
-                v_mat = extract_climate_var(data_dict, ["MAT"])
-                v_sp = extract_climate_var(data_dict, ["Tave_sp"])
-                v_sm = extract_climate_var(data_dict, ["Tave_sm"])
-                v_m5 = extract_climate_var(data_dict, ["Tave05"])
-                
-                if v_mat is not None:
-                    mat_val = v_mat
-                if v_sp is not None:
-                    t_spring_val = v_sp
-                if v_sm is not None:
-                    t_summer_val = v_sm
-                if v_m5 is not None:
-                    t_may_val = v_m5
+            v_mat = extract_climate_var(data_dict, "MAT")
+            v_sp = extract_climate_var(data_dict, "Tave_sp")
+            v_sm = extract_climate_var(data_dict, "Tave_sm")
+            v_m5 = extract_climate_var(data_dict, "Tave_05") # Matches direct monthly string schemas
+            
+            if v_mat is not None: mat_val = v_mat
+            if v_sp is not None: t_spring_val = v_sp
+            if v_sm is not None: t_summer_val = v_sm
+            if v_m5 is not None: t_may_val = v_m5
 
     new_row = pd.DataFrame([[data["species"], doy, year, data["stage"], data["lat"], data["lon"], data["el"], mat_val, t_spring_val, t_summer_val, t_may_val, "Herbarium"]], 
                             columns=["Species", "DOY", "Year", "Phenology_Stage", "Latitude", "Longitude", "Elevation", "MAT", "Tave_Spring", "Tave_Summer", "Tave_May", "Data_Source"])
@@ -311,7 +299,7 @@ with col2:
             fig = px.scatter(
                 valid_graph_df, x=x_axis_var, y="DOY", color="Year",
                 symbol="Data_Source",
-                hover_data=["Phenology_Stage", "Data_Source", "Elevation"],
+                hover_data["Phenology_Stage", "Data_Source", "Elevation"],
                 size_max=12,
                 title=f"Phenology Shift vs {labels_map[x_axis_var]}",
                 labels={x_axis_var: f"{labels_map[x_axis_var]} (°C)", "DOY": "Day of Year Collected", "Year": "Year"},
