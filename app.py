@@ -30,11 +30,17 @@ col1, col2 = st.columns([1, 2])
 if "last_raw_response" not in st.session_state:
     st.session_state.last_raw_response = None
 
+# IMPROVED EXTRACTOR: Case-insensitive fallback matching for precise key safety
 def extract_climate_var(data_dict, key):
     if not isinstance(data_dict, dict):
         return None
-    if key in data_dict:
-        val = data_dict[key]
+        
+    # Create a lowercase mapping of the entire dictionary to catch any case mismatches
+    clean_dict = {str(k).lower().strip(): v for k, v in data_dict.items()}
+    target_key = str(key).lower().strip()
+    
+    if target_key in clean_dict:
+        val = clean_dict[target_key]
         try:
             if val is not None and float(val) != -9999.0:
                 return float(val)
@@ -205,20 +211,25 @@ with col1:
 with col2:
     st.header("Analysis Dashboard")
     
+    # PERMANENT DIAGNOSTIC WINDOW: Always visible right at the top for real-time monitoring
     if st.session_state.last_raw_response is not None:
-        with st.expander("Diagnostic Console"):
+        with st.expander("🔍 Live ClimateNA Diagnostic Console", expanded=True):
+            st.write("Below is the exact text map returned by the api.climatena.ca server:")
             st.json(st.session_state.last_raw_response)
-            
-    df = pd.read_csv(DB_FILE)
-    
-    if df.empty:
-        st.info("The database is currently empty. Add data on the left or use the iNaturalist importer!")
     else:
-        if st.sidebar.button("⚠️ Clear All Records", key="clear_db_btn"):
-            if os.path.exists(DB_FILE): os.remove(DB_FILE)
-            pd.DataFrame(columns=headers).to_csv(DB_FILE, index=False)
-            st.rerun()
+        st.info("💡 Diagnostic Console: Submit data on the left or use the iNaturalist importer to view raw API parameters.")
+            
+    try:
+        df = pd.read_csv(DB_FILE)
+    except Exception:
+        df = pd.DataFrame()
+    
+    if st.sidebar.button("⚠️ Clear All Records", key="clear_db_btn"):
+        if os.path.exists(DB_FILE): os.remove(DB_FILE)
+        pd.DataFrame(columns=headers).to_csv(DB_FILE, index=False)
+        st.rerun()
 
+    if not df.empty:
         st.subheader("Graph Settings")
         f1, f2, f3 = st.columns(3)
         with f1:
