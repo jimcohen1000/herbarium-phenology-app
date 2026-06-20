@@ -47,19 +47,10 @@ def get_climate_data(lat, lon, el, prd):
     return {}
 
 def save_with_ordered_columns(df_to_save, filepath):
-    # 1. Start with your base headers
     new_order = [c for c in base_headers if c in df_to_save.columns]
-    
-    # 2. Define the highly important climate variables you want pushed to the front
     priority_climate = ["Y_MAT", "N_MAT", "Y_MAP", "N_MAP"] 
-    
-    # 3. Add priority columns if they exist
     new_order += [c for c in priority_climate if c in df_to_save.columns and c not in new_order]
-    
-    # 4. Append everything else (the remaining ClimateNA variables)
     new_order += [c for c in df_to_save.columns if c not in new_order]
-    
-    # 5. Save using the new order
     df_to_save[new_order].to_csv(filepath, index=False)
 
 # --- Layout ---
@@ -68,3 +59,30 @@ c1, c2 = st.columns([1, 2.2])
 # Column 1: Data Collection
 with c1:
     st.subheader("Data Collection")
+    tab1, tab2 = st.tabs(["🌿 Herbarium", "🦋 iNaturalist"])
+    
+    # --- TAB 1: MANUAL HERBARIUM ENTRY ---
+    with tab1:
+        with st.form("data_entry_form"):
+            collector = st.text_input("Collector Name")
+            col_num = st.text_input("Collector Number")
+            barcode = st.text_input("Barcode")
+            spp = st.text_input("Species")
+            
+            date_val = st.date_input("Date", min_value=date(1900, 1, 1), max_value=date(2030, 12, 31), value=date(2020, 5, 1))
+            
+            st.write("**Phenology:**")
+            col_f, col_fr, col_v = st.columns(3)
+            with col_f: flow = st.checkbox("Flowering", value=True)
+            with col_fr: fruit = st.checkbox("Fruiting")
+            with col_v: veg = st.checkbox("Vegetative")
+            
+            lat = st.number_input("Lat", format="%.5f", value=51.1764)
+            lon = st.number_input("Lon", format="%.5f", value=-115.5682)
+            el = st.number_input("Elev (m)", value=1420)
+            
+            submitted = st.form_submit_button("💾 SAVE ENTRY", type="primary", use_container_width=True)
+        
+        if submitted:
+            with st.spinner("Fetching climate models..."):
+                year_data = get_climate_data(lat, lon, el, f"Year_{date_
