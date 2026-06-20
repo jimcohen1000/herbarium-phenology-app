@@ -19,7 +19,7 @@ base_headers = [
 if not os.path.exists(db_file):
     pd.DataFrame(columns=base_headers).to_csv(db_file, index=False)
 
-# --- Helpers: API Fetchers ---
+# --- Helpers: API Fetchers & Formatting ---
 def get_elevation(lat, lon):
     try:
         url = f"https://api.open-meteo.com/v1/elevation?latitude={lat}&longitude={lon}"
@@ -28,7 +28,7 @@ def get_elevation(lat, lon):
             elevations = res.json().get('elevation')
             if elevations and len(elevations) > 0:
                 return float(elevations[0])
-    except: 
+    except Exception: 
         return None
     return None
 
@@ -41,9 +41,25 @@ def get_climate_data(lat, lon, el, prd):
         if res.status_code == 200:
             data = res.json()
             return data[0] if isinstance(data, list) else data
-    except: 
+    except Exception: 
         return {}
     return {}
+
+def save_with_ordered_columns(df_to_save, filepath):
+    # 1. Start with your base headers
+    new_order = [c for c in base_headers if c in df_to_save.columns]
+    
+    # 2. Define the highly important climate variables you want pushed to the front
+    priority_climate = ["Y_MAT", "N_MAT", "Y_MAP", "N_MAP"] 
+    
+    # 3. Add priority columns if they exist
+    new_order += [c for c in priority_climate if c in df_to_save.columns and c not in new_order]
+    
+    # 4. Append everything else (the remaining ClimateNA variables)
+    new_order += [c for c in df_to_save.columns if c not in new_order]
+    
+    # 5. Save using the new order
+    df_to_save[new_order].to_csv(filepath, index=False)
 
 # --- Layout ---
 c1, c2 = st.columns([1, 2.2])
@@ -73,7 +89,6 @@ with c1:
             lon = st.number_input("Lon", format="%.5f", value=-115.5682)
             el = st.number_input("Elev (m)", value=1420)
             
-            # PERFECTLY INDENTED SUBMIT BUTTON
             submitted = st.form_submit_button("💾 SAVE ENTRY", type="primary", use_container_width=True)
         
         if submitted:
@@ -94,7 +109,8 @@ with c1:
                 
                 df_existing = pd.read_csv(db_file)
                 df_combined = pd.concat([df_existing, pd.DataFrame([row])], ignore_index=True)
-                df_combined.to_csv(db_file, index=False)
+                save_with_ordered_columns(df_combined, db_file)
+                
                 st.success("Herbarium Entry saved!")
                 st.rerun()
 
@@ -102,17 +118,22 @@ with c1:
     with tab2:
         with st.form("inat_import_form"):
             inat_spp = st.text_input("Target Species", "Anemone patens")
+            
+            st.write("**Date Range (Ensures ClimateNA compatibility):**")
+            col_d1, col_d2 = st.columns(2)
+            with col_d1: d1 = st.date_input("Start Date", value=date(2000, 1, 1))
+            with col_d2: d2 = st.date_input("End Date", value=date(2022, 12, 31))
+            
             inat_limit = st.slider("Records to Fetch", 5, 50, 25, step=5)
             st.info("Pulls Location -> Calculates Elevation -> Fetches ClimateNA models.")
             
-            # PERFECTLY INDENTED SUBMIT BUTTON
             inat_submitted = st.form_submit_button("📥 FETCH & PROCESS DATA", type="primary", use_container_width=True)
             
         if inat_submitted:
             records = []
-            url = f"https://api.inaturalist.org/v1/observations?taxon_name={inat_spp}&quality_grade=research&per_page={inat_limit}"
+            url = f"https://api.inaturalist.org/v1/observations?taxon_name={inat_spp}&quality_grade=research&per_page={inat_limit}&d1={d1}&d2={d2}"
             
-            st.write(f"Contacting iNaturalist for {inat_limit} records...")
+            st.write(f"Contacting iNaturalist for {inat_limit} records between {d1.year} and {d2.year}...")
             res = requests.get(url, timeout=15)
             
             if res.status_code == 200:
@@ -138,6 +159,7 @@ with c1:
                                     "Species": obs.get('taxon', {}).get('name', inat_spp),
                                     "Latitude": lat, "Longitude": lon, "Elevation": el,
                                     "Year": dt.year, "DOY": dt.timetuple().tm_yday,
+                                    "Flowering": False, "Fruiting": False, "Vegetative": False,
                                     "URL": obs.get('uri', "")
                                 }
                                 
@@ -159,7 +181,7 @@ with c1:
                     if records:
                         df_existing = pd.read_csv(db_file)
                         df_combined = pd.concat([df_existing, pd.DataFrame(records)], ignore_index=True)
-                        df_combined.to_csv(db_file, index=False)
+                        save_with_ordered_columns(df_combined, db_file)
                         st.success(f"Successfully added {len(records)} iNaturalist records!")
                         st.rerun()
                 else:
@@ -211,11 +233,16 @@ with c2:
     
     # --- TABLE SECTION ---
     st.subheader("📋 Formatted Database Ledger")
+    st.info("💡 You can edit Species names and check off Phenology data directly in this table! Click 'Save Ledger Edits' below to write changes to the CSV.")
     
     if not df.empty:
         df = df.sort_values(by=["Year", "DOY"], ascending=[False, False])
         
-    st.dataframe(
+        for col in ["Flowering", "Fruiting", "Vegetative"]:
+            # Fill missing with False, then convert to bool for checkboxes
+            df[col] = df[col].fillna(False).astype(bool)
+            
+    edited_df = st.data_editor(
         df, 
         use_container_width=True, 
         hide_index=True,
@@ -226,11 +253,22 @@ with c2:
             "Longitude": st.column_config.NumberColumn("Lon", format="%.4f"),
             "Elevation": st.column_config.NumberColumn("Elev", format="%d m"),
             "URL": st.column_config.LinkColumn("Link"),
-            "Data_Source": st.column_config.TextColumn("Source")
+            "Data_Source": st.column_config.TextColumn("Source", disabled=True), 
+            "Flowering": st.column_config.CheckboxColumn("Flowering"),
+            "Fruiting": st.column_config.CheckboxColumn("Fruiting"),
+            "Vegetative": st.column_config.CheckboxColumn("Vegetative"),
+            "Species": st.column_config.TextColumn("Species") 
         }
     )
     
-    col_dl, _ = st.columns([1, 3])
+    col_save, col_dl, _ = st.columns([1, 1, 2])
+    
+    with col_save:
+        if st.button("💾 Save Ledger Edits", type="primary", use_container_width=True):
+            save_with_ordered_columns(edited_df, db_file)
+            st.success("Database updated successfully!")
+            st.rerun()
+
     with col_dl:
         st.download_button(
             "📥 Download Full CSV", 
