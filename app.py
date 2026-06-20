@@ -202,6 +202,11 @@ with c2:
     for col in base_headers:
         if col not in df.columns:
             df[col] = None
+            
+    # SAFETY CHECK: Always force phenology to boolean for the filters and table
+    if not df.empty:
+        for col in ["Flowering", "Fruiting", "Vegetative"]:
+            df[col] = df[col].fillna(False).astype(bool)
     
     # --- GRAPH SECTION ---
     if not df.empty and len(df) > 0:
@@ -214,22 +219,35 @@ with c2:
                 species_list = df["Species"].dropna().unique()
                 selected_spp = st.multiselect("Filter Species:", species_list, default=species_list)
             
+            # --- NEW PHENOLOGY FILTERS ---
+            st.write("**Require Phenology Traits:**")
+            p1, p2, p3 = st.columns(3)
+            with p1: req_flow = st.checkbox("Flowering Only")
+            with p2: req_fruit = st.checkbox("Fruiting Only")
+            with p3: req_veg = st.checkbox("Vegetative Only")
+
+            # Apply filters
             plot_df = df[df["Species"].isin(selected_spp)].copy()
+            if req_flow: plot_df = plot_df[plot_df["Flowering"] == True]
+            if req_fruit: plot_df = plot_df[plot_df["Fruiting"] == True]
+            if req_veg: plot_df = plot_df[plot_df["Vegetative"] == True]
             
             if x_var in plot_df.columns:
                 plot_df[x_var] = pd.to_numeric(plot_df[x_var], errors='coerce')
                 plot_df = plot_df.dropna(subset=[x_var, "DOY"])
                 if not plot_df.empty:
+                    # --- UPDATED PLOTLY GRAPH ---
                     fig = px.scatter(
                         plot_df, x=x_var, y="DOY", 
-                        color="Data_Source", 
+                        color="Species",           # 👈 Species are now colors
+                        symbol="Data_Source",      # 👈 Data Source is now shapes
                         hover_data=["Year", "URL"] if "URL" in plot_df.columns else ["Year"],
                         trendline="ols", 
-                        title=f"Phenology (DOY) vs {x_var} by Source"
+                        title=f"Phenology (DOY) vs {x_var}"
                     )
                     st.plotly_chart(fig, use_container_width=True)
                 else:
-                    st.warning("Not enough valid data points to graph.")
+                    st.warning("Not enough valid data points to graph after applying filters.")
     else:
         st.info("No data collected yet. Add your first entry on the left to see the graph!")
         
@@ -241,10 +259,6 @@ with c2:
     
     if not df.empty:
         df = df.sort_values(by=["Year", "DOY"], ascending=[False, False])
-        
-    # SAFETY CHECK: Always force phenology to boolean, even if DF is completely empty!
-    for col in ["Flowering", "Fruiting", "Vegetative"]:
-        df[col] = df[col].fillna(False).astype(bool)
             
     edited_df = st.data_editor(
         df, 
